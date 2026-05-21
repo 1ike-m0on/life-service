@@ -3,6 +3,9 @@ package io.github.ikemoon.lifeservice.merchant.controller;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.github.ikemoon.lifeservice.common.api.ApiResponse;
 import io.github.ikemoon.lifeservice.common.api.PageResponse;
+import io.github.ikemoon.lifeservice.infrastructure.ratelimit.RateLimitFailureStrategy;
+import io.github.ikemoon.lifeservice.infrastructure.ratelimit.RateLimitType;
+import io.github.ikemoon.lifeservice.infrastructure.ratelimit.RateLimiter;
 import io.github.ikemoon.lifeservice.merchant.entity.Merchant;
 import io.github.ikemoon.lifeservice.merchant.service.MerchantQueryService;
 import jakarta.validation.constraints.Max;
@@ -26,6 +29,13 @@ public class MerchantController {
     }
 
     @GetMapping
+    @RateLimiter(
+            key = "life:rate:merchant:query:",
+            window = 1,
+            limit = 20,
+            message = "Query too frequent, please try again later",
+            type = RateLimitType.IP,
+            failureStrategy = RateLimitFailureStrategy.FAIL_OPEN)
     public ApiResponse<PageResponse<Merchant>> pageMerchants(
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String keyword,
@@ -36,6 +46,13 @@ public class MerchantController {
     }
 
     @GetMapping("/{id}")
+    @RateLimiter(
+            key = "life:rate:merchant:detail:",
+            window = 1,
+            limit = 10,
+            message = "Query too frequent, please try again later",
+            type = RateLimitType.IP,
+            failureStrategy = RateLimitFailureStrategy.FAIL_OPEN)
     public ApiResponse<Merchant> getMerchant(@PathVariable Long id) {
         return ApiResponse.ok(merchantQueryService.getMerchant(id));
     }

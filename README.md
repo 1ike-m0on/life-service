@@ -2,7 +2,7 @@
 
 Life Service 是一个基于 Java 21 和 Spring Boot 3 的生活服务后端项目。项目以本地生活优惠券业务为主线，逐步实现商户查询、优惠券秒杀、订单关闭、缓存一致性、限流等能力。
 
-当前版本聚焦 V1：缓存优化、秒杀异步下单、未支付订单自动关闭，以及支付和关单并发控制。
+当前版本聚焦 V2：多级缓存、缓存删除补偿、秒杀热路径预热，以及 Redis + Lua 滑动窗口限流。
 
 ## 技术栈
 
@@ -29,7 +29,16 @@ Life Service 是一个基于 Java 21 和 Spring Boot 3 的生活服务后端项�
 - 缓存空值，防止缓存穿透
 - TTL 随机抖动，降低缓存雪崩风险
 - 逻辑过期缓存客户端
+- Caffeine + Redis 二级缓存
 - 缓存删除失败补偿任务表
+
+### 滑动窗口限流
+
+- `@RateLimiter` 注解 + AOP 无侵入限流
+- Redis ZSet + Lua 原子滑动窗口计数
+- 支持 `GLOBAL`、`IP`、`USER` 三种维度
+- 秒杀下单接口启用全局、用户、IP 三层限流
+- 普通商户查询限流 Redis 异常时 fail open，秒杀限流异常时 fail closed
 
 ### 秒杀下单
 
@@ -46,6 +55,8 @@ Life Service 是一个基于 Java 21 和 Spring Boot 3 的生活服务后端项�
 
 已实现：
 
+- 秒杀入口只读取 Redis 热数据，缺失时直接失败，不回源 MySQL
+- 秒杀预热接口写入券元数据、Redis 库存，并重建用户集合就绪标记与已有订单用户
 - Redis Lua 防超卖
 - Redis Set 保证一人一单资格
 - RocketMQ 异步下单
@@ -78,7 +89,7 @@ Spring Task 扫描超时待支付订单
 
 ```text
 POST /api/v1/voucher-orders/{orderNo}/payment
-Header: X-User-Id: {userId}
+Header: Authorization: Bearer {token}
 ```
 
 支付和关单都依赖数据库条件更新：
@@ -103,15 +114,61 @@ GET  /api/v1/merchant-categories
 GET  /api/v1/merchants
 GET  /api/v1/merchants/{id}
 GET  /api/v1/merchants/{merchantId}/vouchers
+POST /api/v1/auth/login
+GET  /api/v1/auth/me
+POST /api/v1/auth/logout
+POST /api/v1/flash-sale-vouchers/{voucherId}/warmup
 POST /api/v1/flash-sale-vouchers/{voucherId}/orders
 POST /api/v1/voucher-orders/{orderNo}/payment
+```
+
+邮箱登录示例：
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "demo2001@life.local"
+}
+```
+
+登录成功后，秒杀下单和支付接口需要携带：
+
+```http
+Authorization: Bearer {token}
+```
+
+## 前端联调面板
+
+当前仓库提供一个轻量静态前端控制台，随 Spring Boot 静态资源一起托管，不需要额外安装 Node.js 依赖。
+
+启动后访问：
+
+```text
+http://localhost:8081/app/index.html
+```
+
+控制台当前支持：
+
+- 查询商户分类、商户列表、商户详情和商户优惠券
+- 触发秒杀券预热
+- 发送秒杀下单请求，并自动记录成功订单号
+- 模拟订单支付回调
+- 触发商户详情和秒杀同用户限流测试
+- 展示 HTTP 状态码、业务码、耗时和 `X-Trace-Id`
+
+秒杀预热示例：
+
+```http
+POST /api/v1/flash-sale-vouchers/1001/warmup
 ```
 
 秒杀下单示例：
 
 ```http
 POST /api/v1/flash-sale-vouchers/1001/orders
-X-User-Id: 2001
+Authorization: Bearer {token}
 ```
 
 成功响应：
@@ -186,6 +243,7 @@ mvn test
 - 超时关单
 - 库存释放补偿
 - 支付和关单并发状态判断
+- 滑动窗口限流注解、Key 解析和 Redis Lua 客户端
 
 ## 项目结构
 

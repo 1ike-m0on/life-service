@@ -59,6 +59,9 @@ rocketmq:
     send-message-timeout: ${ROCKETMQ_SEND_TIMEOUT_MS:3000}
 
 life-service:
+  auth:
+    token-prefix: ${AUTH_TOKEN_PREFIX:life:auth:token:}
+    token-ttl: ${AUTH_TOKEN_TTL:7d}
   cache:
     local:
       enabled: ${LOCAL_CACHE_ENABLED:true}
@@ -89,6 +92,7 @@ life-service:
 
 logging:
   level:
-    io.github.ikemoon.lifeservice: debug
+    io.github.ikemoon.lifeservice: info
   pattern:
     dateformat: yyyy-MM-dd HH:mm:ss.SSS
+    level: "%5p [traceId=%X{traceId:-}]"
