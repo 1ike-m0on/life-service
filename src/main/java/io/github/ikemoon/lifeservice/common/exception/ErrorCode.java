@@ -2,6 +2,7 @@ package io.github.ikemoon.lifeservice.common.exception;
 
 public enum ErrorCode {
     BAD_REQUEST,
+    UNAUTHORIZED,
     NOT_FOUND,
     RATE_LIMITED,
     FLASH_SALE_NOT_READY,

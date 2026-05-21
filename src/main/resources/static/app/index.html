@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Life Service 控制台</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="主导航">
+    <div class="brand">
+      <span class="brand-mark">LS</span>
+      <div>
+        <strong>Life Service</strong>
+        <span>V2 控制台</span>
+      </div>
+    </div>
+    <nav>
+      <a href="#overview">概览</a>
+      <a href="#merchants">商户查询</a>
+      <a href="#flash-sale">秒杀验证</a>
+      <a href="#payment">支付回调</a>
+      <a href="#rate-limit">限流测试</a>
+      <a href="#responses">响应记录</a>
+    </nav>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar" id="overview">
+      <div>
+        <p class="eyebrow">Spring Boot 静态资源</p>
+        <h1>后端联调控制台</h1>
+      </div>
+      <div class="top-actions">
+        <label class="base-url">
+          <span>API 地址</span>
+          <input id="baseUrlInput" type="url" placeholder="http://localhost:8081">
+        </label>
+        <button id="saveBaseUrlButton" type="button">保存</button>
+      </div>
+    </header>
+
+    <section class="metric-grid" aria-label="最近一次请求">
+      <div class="metric">
+        <span>HTTP</span>
+        <strong id="lastHttpStatus">-</strong>
+      </div>
+      <div class="metric">
+        <span>业务码</span>
+        <strong id="lastCode">-</strong>
+      </div>
+      <div class="metric">
+        <span>耗时</span>
+        <strong id="lastElapsed">-</strong>
+      </div>
+      <div class="metric metric-wide">
+        <span>Trace ID</span>
+        <strong id="lastTraceId">-</strong>
+      </div>
+    </section>
+
+    <section class="panel control-panel" aria-label="登录鉴权">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Auth</p>
+          <h2>邮箱登录</h2>
+        </div>
+        <div class="action-row compact-actions">
+          <button id="loginButton" type="button">登录</button>
+          <button id="meButton" type="button">当前用户</button>
+          <button id="logoutButton" type="button">退出</button>
+        </div>
+      </div>
+      <div class="form-grid auth-grid">
+        <label>
+          <span>邮箱</span>
+          <input id="emailInput" type="email" value="demo2001@life.local">
+        </label>
+        <label>
+          <span>Token</span>
+          <input id="tokenInput" placeholder="登录后自动填入">
+        </label>
+        <label>
+          <span>当前用户 ID</span>
+          <input id="userIdInput" inputmode="numeric" placeholder="登录后自动填入" readonly>
+        </label>
+        <label>
+          <span>昵称</span>
+          <input id="nicknameInput" placeholder="登录后自动填入" readonly>
+        </label>
+      </div>
+      <div id="authResult" class="result-area auth-result">登录后，秒杀和支付请求会自动携带 Authorization: Bearer token。</div>
+    </section>
+
+    <section class="panel control-panel" aria-label="公共参数">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Test Inputs</p>
+          <h2>公共参数</h2>
+        </div>
+      </div>
+      <div class="form-grid">
+        <label>
+          <span>秒杀券 ID</span>
+          <input id="voucherIdInput" inputmode="numeric" value="1001">
+        </label>
+        <label>
+          <span>商户 ID</span>
+          <input id="merchantIdInput" inputmode="numeric" value="1">
+        </label>
+        <label>
+          <span>订单号</span>
+          <input id="orderNoInput" placeholder="下单成功后自动填入">
+        </label>
+      </div>
+    </section>
+
+    <section class="content-grid">
+      <section class="panel" id="merchants">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Cache Path</p>
+            <h2>商户与优惠券</h2>
+          </div>
+          <button id="loadCategoriesButton" type="button">加载分类</button>
+        </div>
+        <div class="inline-form">
+          <input id="categoryIdInput" inputmode="numeric" placeholder="分类 ID">
+          <input id="keywordInput" placeholder="关键词">
+          <button id="searchMerchantsButton" type="button">查询商户</button>
+          <button id="loadMerchantDetailButton" type="button">详情</button>
+          <button id="loadVouchersButton" type="button">优惠券</button>
+        </div>
+        <div id="categoryList" class="pill-row" aria-live="polite"></div>
+        <div id="merchantResult" class="result-area">等待查询商户数据。</div>
+      </section>
+
+      <section class="panel" id="flash-sale">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Hot Path</p>
+            <h2>秒杀验证</h2>
+          </div>
+          <button id="warmupButton" type="button">预热</button>
+        </div>
+        <div class="action-row">
+          <button id="seckillButton" type="button">抢券</button>
+          <button id="repeatSeckillButton" type="button">同用户 4 连击</button>
+        </div>
+        <div id="flashSaleResult" class="result-area">先预热，再执行抢券请求。</div>
+      </section>
+
+      <section class="panel" id="payment">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Order State</p>
+            <h2>支付回调</h2>
+          </div>
+          <button id="payButton" type="button">模拟支付</button>
+        </div>
+        <div id="paymentResult" class="result-area">输入订单号后可模拟支付成功回调。</div>
+      </section>
+
+      <section class="panel" id="rate-limit">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Redis Lua</p>
+            <h2>限流测试</h2>
+          </div>
+        </div>
+        <div class="action-row">
+          <button id="merchantLimitButton" type="button">商户详情 12 连击</button>
+          <button id="flashSaleLimitButton" type="button">秒杀同用户限流</button>
+        </div>
+        <div id="rateLimitResult" class="result-area">用于观察 RATE_LIMITED、HTTP 429 和 traceId。</div>
+      </section>
+    </section>
+
+    <section class="panel response-panel" id="responses">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Request Log</p>
+          <h2>响应记录</h2>
+        </div>
+        <button id="clearLogButton" type="button">清空</button>
+      </div>
+      <div id="responseLog" class="response-log" aria-live="polite"></div>
+    </section>
+  </main>
+</div>
+</body>
+</html>
