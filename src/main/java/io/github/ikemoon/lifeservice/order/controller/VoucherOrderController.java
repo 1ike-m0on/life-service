@@ -1,6 +1,7 @@
 package io.github.ikemoon.lifeservice.order.controller;
 
 import io.github.ikemoon.lifeservice.common.api.ApiResponse;
+import io.github.ikemoon.lifeservice.order.service.FlashSaleOrderResult;
 import io.github.ikemoon.lifeservice.order.service.FlashSaleOrderService;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,7 +22,15 @@ public class VoucherOrderController {
     @PostMapping("/{voucherId}/orders")
     public ApiResponse<String> seckill(
             @PathVariable Long voucherId,
-            @RequestHeader("X-User-Id") Long userId) {
-        return ApiResponse.ok(flashSaleOrderService.seckill(voucherId, userId));
+            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        FlashSaleOrderResult result = flashSaleOrderService.seckill(voucherId, userId);
+        return toResponse(result);
+    }
+
+    private ApiResponse<String> toResponse(FlashSaleOrderResult result) {
+        if (!result.success()) {
+            return ApiResponse.fail(result.code().name(), result.message());
+        }
+        return ApiResponse.ok(result.orderNo());
     }
 }

@@ -1,5 +1,10 @@
 server:
   port: ${SERVER_PORT:8081}
+  tomcat:
+    threads:
+      max: ${SERVER_TOMCAT_THREADS_MAX:400}
+      min-spare: ${SERVER_TOMCAT_THREADS_MIN_SPARE:20}
+    accept-count: ${SERVER_TOMCAT_ACCEPT_COUNT:1000}
 
 spring:
   config:
@@ -11,6 +16,10 @@ spring:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:life_service}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${MYSQL_POOL_MAX_SIZE:32}
+      minimum-idle: ${MYSQL_POOL_MIN_IDLE:8}
+      connection-timeout: ${MYSQL_POOL_CONNECTION_TIMEOUT_MS:2000}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -20,10 +29,16 @@ spring:
       timeout: 3s
       lettuce:
         pool:
-          max-active: 16
-          max-idle: 8
-          min-idle: 1
+          max-active: ${REDIS_POOL_MAX_ACTIVE:128}
+          max-idle: ${REDIS_POOL_MAX_IDLE:32}
+          min-idle: ${REDIS_POOL_MIN_IDLE:8}
           time-between-eviction-runs: 30s
+  task:
+    execution:
+      pool:
+        core-size: ${TASK_EXECUTION_CORE_SIZE:8}
+        max-size: ${TASK_EXECUTION_MAX_SIZE:32}
+        queue-capacity: ${TASK_EXECUTION_QUEUE_CAPACITY:1000}
   jackson:
     default-property-inclusion: non_null
     time-zone: Asia/Shanghai
@@ -36,6 +51,30 @@ mybatis-plus:
   global-config:
     db-config:
       id-type: auto
+
+rocketmq:
+  name-server: ${ROCKETMQ_NAME_SERVER:localhost:9876}
+  producer:
+    group: ${ROCKETMQ_PRODUCER_GROUP:life-service-producer}
+    send-message-timeout: ${ROCKETMQ_SEND_TIMEOUT_MS:3000}
+
+life-service:
+  messaging:
+    order:
+      provider: ${ORDER_MESSAGE_PROVIDER:rocketmq}
+    rocketmq:
+      flash-sale-order-topic: ${FLASH_SALE_ORDER_TOPIC:life-service-flash-sale-order}
+      flash-sale-order-consumer-group: ${FLASH_SALE_ORDER_CONSUMER_GROUP:life-service-flash-sale-order-consumer}
+  order:
+    close:
+      enabled: ${ORDER_CLOSE_ENABLED:true}
+      payment-timeout: ${ORDER_PAYMENT_TIMEOUT:15m}
+      scan-fixed-delay-ms: ${ORDER_CLOSE_SCAN_FIXED_DELAY_MS:60000}
+      batch-size: ${ORDER_CLOSE_BATCH_SIZE:200}
+      stock-release-retry-delay: ${ORDER_STOCK_RELEASE_RETRY_DELAY:1m}
+      stock-release-max-retry-count: ${ORDER_STOCK_RELEASE_MAX_RETRY_COUNT:5}
+      stock-release-retry-batch-size: ${ORDER_STOCK_RELEASE_RETRY_BATCH_SIZE:200}
+      stock-release-retry-fixed-delay-ms: ${ORDER_STOCK_RELEASE_RETRY_FIXED_DELAY_MS:60000}
 
 logging:
   level:

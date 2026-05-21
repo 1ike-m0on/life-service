@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.github.ikemoon.lifeservice.common.exception.BusinessException;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
+import io.github.ikemoon.lifeservice.infrastructure.cache.CacheClient;
+import io.github.ikemoon.lifeservice.infrastructure.cache.CacheConstants;
 import io.github.ikemoon.lifeservice.merchant.entity.Merchant;
 import io.github.ikemoon.lifeservice.merchant.entity.MerchantCategory;
 import io.github.ikemoon.lifeservice.merchant.mapper.MerchantCategoryMapper;
@@ -11,17 +13,26 @@ import io.github.ikemoon.lifeservice.merchant.mapper.MerchantMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.util.List;
 
 @Service
 public class MerchantQueryServiceImpl implements MerchantQueryService {
 
+    private static final Duration MERCHANT_CACHE_TTL = Duration.ofMinutes(30);
+    private static final Duration MERCHANT_NULL_CACHE_TTL = Duration.ofMinutes(2);
+
     private final MerchantCategoryMapper categoryMapper;
     private final MerchantMapper merchantMapper;
+    private final CacheClient cacheClient;
 
-    public MerchantQueryServiceImpl(MerchantCategoryMapper categoryMapper, MerchantMapper merchantMapper) {
+    public MerchantQueryServiceImpl(
+            MerchantCategoryMapper categoryMapper,
+            MerchantMapper merchantMapper,
+            CacheClient cacheClient) {
         this.categoryMapper = categoryMapper;
         this.merchantMapper = merchantMapper;
+        this.cacheClient = cacheClient;
     }
 
     @Override
@@ -46,9 +57,23 @@ public class MerchantQueryServiceImpl implements MerchantQueryService {
 
     @Override
     public Merchant getMerchant(Long id) {
+        Merchant merchant = cacheClient.queryWithPassThrough(
+                CacheConstants.MERCHANT_KEY_PREFIX,
+                id,
+                Merchant.class,
+                this::selectEnabledMerchantById,
+                MERCHANT_CACHE_TTL,
+                MERCHANT_NULL_CACHE_TTL);
+        if (merchant == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Merchant not found");
+        }
+        return merchant;
+    }
+
+    private Merchant selectEnabledMerchantById(Long id) {
         Merchant merchant = merchantMapper.selectById(id);
         if (merchant == null || Integer.valueOf(0).equals(merchant.getStatus())) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "商户不存在");
+            return null;
         }
         return merchant;
     }
