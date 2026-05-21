@@ -55,6 +55,14 @@ public class CacheClient {
         redisTemplate.delete(key);
     }
 
+    public <T> T get(String key, Class<T> type) {
+        String cached = redisTemplate.opsForValue().get(key);
+        if (!StringUtils.hasText(cached)) {
+            return null;
+        }
+        return readValue(cached, type);
+    }
+
     public <T, ID> T queryWithPassThrough(
             String keyPrefix,
             ID id,

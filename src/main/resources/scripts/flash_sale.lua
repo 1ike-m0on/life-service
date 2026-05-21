@@ -5,7 +5,11 @@ local stockKey = 'life:flash:voucher:stock:' .. voucherId
 local orderKey = 'life:flash:voucher:users:' .. voucherId
 
 local stock = redis.call('GET', stockKey)
-if (stock == false or tonumber(stock) <= 0) then
+if (stock == false or redis.call('EXISTS', orderKey) == 0) then
+    return 3
+end
+
+if (tonumber(stock) <= 0) then
     return 1
 end
 

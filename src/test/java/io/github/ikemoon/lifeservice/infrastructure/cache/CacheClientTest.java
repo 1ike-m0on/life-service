@@ -66,6 +66,26 @@ class CacheClientTest {
     }
 
     @Test
+    void getReturnsCachedValue() throws Exception {
+        Merchant cached = merchant(10L, "Coffee Shop");
+        when(valueOperations.get("merchant:10")).thenReturn(objectMapper.writeValueAsString(cached));
+
+        Merchant result = cacheClient.get("merchant:10", Merchant.class);
+
+        assertThat(result.getId()).isEqualTo(10L);
+        assertThat(result.getName()).isEqualTo("Coffee Shop");
+    }
+
+    @Test
+    void getReturnsNullWhenKeyMissing() {
+        when(valueOperations.get("merchant:10")).thenReturn(null);
+
+        Merchant result = cacheClient.get("merchant:10", Merchant.class);
+
+        assertThat(result).isNull();
+    }
+
+    @Test
     void queryWithPassThroughReturnsNullWhenNullSentinelHit() {
         when(valueOperations.get("merchant:10")).thenReturn("");
         AtomicBoolean fallbackCalled = new AtomicBoolean(false);

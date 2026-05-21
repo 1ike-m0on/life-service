@@ -1,6 +1,5 @@
 package io.github.ikemoon.lifeservice.order.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.github.ikemoon.lifeservice.common.exception.BusinessException;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
 import io.github.ikemoon.lifeservice.infrastructure.cache.CacheClient;
@@ -11,7 +10,6 @@ import io.github.ikemoon.lifeservice.order.messaging.FlashSaleOrderMessagePublis
 import io.github.ikemoon.lifeservice.order.service.FlashSaleOrderResult;
 import io.github.ikemoon.lifeservice.order.service.FlashSaleOrderService;
 import io.github.ikemoon.lifeservice.voucher.entity.FlashSaleVoucher;
-import io.github.ikemoon.lifeservice.voucher.mapper.FlashSaleVoucherMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
@@ -19,7 +17,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
 
@@ -27,8 +24,6 @@ import java.util.Collections;
 public class FlashSaleOrderServiceImpl implements FlashSaleOrderService {
 
     private static final Logger log = LoggerFactory.getLogger(FlashSaleOrderServiceImpl.class);
-    private static final Duration FLASH_SALE_VOUCHER_CACHE_TTL = Duration.ofMinutes(30);
-    private static final Duration FLASH_SALE_VOUCHER_NULL_CACHE_TTL = Duration.ofSeconds(30);
     private static final DefaultRedisScript<Long> FLASH_SALE_SCRIPT = new DefaultRedisScript<>();
     private static final DefaultRedisScript<Long> FLASH_SALE_ROLLBACK_SCRIPT = new DefaultRedisScript<>();
 
@@ -42,19 +37,16 @@ public class FlashSaleOrderServiceImpl implements FlashSaleOrderService {
     private final StringRedisTemplate redisTemplate;
     private final CacheClient cacheClient;
     private final OrderNoGenerator orderNoGenerator;
-    private final FlashSaleVoucherMapper flashSaleVoucherMapper;
     private final FlashSaleOrderMessagePublisher orderMessagePublisher;
 
     public FlashSaleOrderServiceImpl(
             StringRedisTemplate redisTemplate,
             CacheClient cacheClient,
             OrderNoGenerator orderNoGenerator,
-            FlashSaleVoucherMapper flashSaleVoucherMapper,
             FlashSaleOrderMessagePublisher orderMessagePublisher) {
         this.redisTemplate = redisTemplate;
         this.cacheClient = cacheClient;
         this.orderNoGenerator = orderNoGenerator;
-        this.flashSaleVoucherMapper = flashSaleVoucherMapper;
         this.orderMessagePublisher = orderMessagePublisher;
     }
 
@@ -64,15 +56,11 @@ public class FlashSaleOrderServiceImpl implements FlashSaleOrderService {
             return FlashSaleOrderResult.fail(ErrorCode.BAD_REQUEST, "Missing user id");
         }
 
-        FlashSaleVoucher flashSaleVoucher = cacheClient.queryWithPassThrough(
-                CacheConstants.FLASH_SALE_VOUCHER_KEY_PREFIX,
-                voucherId,
-                FlashSaleVoucher.class,
-                this::selectFlashSaleVoucherByVoucherId,
-                FLASH_SALE_VOUCHER_CACHE_TTL,
-                FLASH_SALE_VOUCHER_NULL_CACHE_TTL);
+        FlashSaleVoucher flashSaleVoucher = cacheClient.get(
+                CacheConstants.FLASH_SALE_VOUCHER_KEY_PREFIX + voucherId,
+                FlashSaleVoucher.class);
         if (flashSaleVoucher == null) {
-            return FlashSaleOrderResult.fail(ErrorCode.NOT_FOUND, "Flash sale voucher not found");
+            return FlashSaleOrderResult.fail(ErrorCode.FLASH_SALE_NOT_READY, "Flash sale is not ready");
         }
         FlashSaleOrderResult saleTimeResult = validateSaleTime(flashSaleVoucher);
         if (!saleTimeResult.success()) {
@@ -93,6 +81,12 @@ public class FlashSaleOrderServiceImpl implements FlashSaleOrderService {
         if (Long.valueOf(2L).equals(result)) {
             return FlashSaleOrderResult.fail(ErrorCode.FLASH_SALE_DUPLICATE_ORDER, "Duplicate flash sale order");
         }
+        if (Long.valueOf(3L).equals(result)) {
+            return FlashSaleOrderResult.fail(ErrorCode.FLASH_SALE_NOT_READY, "Flash sale is not ready");
+        }
+        if (!Long.valueOf(0L).equals(result)) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Unexpected flash sale qualification result");
+        }
 
         try {
             String orderNo = orderNoGenerator.nextOrderNo("LSO");
@@ -103,11 +97,6 @@ public class FlashSaleOrderServiceImpl implements FlashSaleOrderService {
             log.error("Flash sale order enqueue failed, voucherId={}, userId={}", voucherId, userId, e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Flash sale order enqueue failed", e);
         }
-    }
-
-    private FlashSaleVoucher selectFlashSaleVoucherByVoucherId(Long voucherId) {
-        return flashSaleVoucherMapper.selectOne(
-                new LambdaQueryWrapper<FlashSaleVoucher>().eq(FlashSaleVoucher::getVoucherId, voucherId));
     }
 
     private FlashSaleOrderResult validateSaleTime(FlashSaleVoucher voucher) {
