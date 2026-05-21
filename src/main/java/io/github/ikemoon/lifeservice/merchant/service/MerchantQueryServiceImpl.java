@@ -6,6 +6,7 @@ import io.github.ikemoon.lifeservice.common.exception.BusinessException;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
 import io.github.ikemoon.lifeservice.infrastructure.cache.CacheClient;
 import io.github.ikemoon.lifeservice.infrastructure.cache.CacheConstants;
+import io.github.ikemoon.lifeservice.infrastructure.cache.TwoLevelCacheClient;
 import io.github.ikemoon.lifeservice.merchant.entity.Merchant;
 import io.github.ikemoon.lifeservice.merchant.entity.MerchantCategory;
 import io.github.ikemoon.lifeservice.merchant.mapper.MerchantCategoryMapper;
@@ -21,22 +22,34 @@ public class MerchantQueryServiceImpl implements MerchantQueryService {
 
     private static final Duration MERCHANT_CACHE_TTL = Duration.ofMinutes(30);
     private static final Duration MERCHANT_NULL_CACHE_TTL = Duration.ofMinutes(2);
+    private static final Duration MERCHANT_CATEGORY_REDIS_CACHE_TTL = Duration.ofMinutes(30);
 
     private final MerchantCategoryMapper categoryMapper;
     private final MerchantMapper merchantMapper;
     private final CacheClient cacheClient;
+    private final TwoLevelCacheClient twoLevelCacheClient;
 
     public MerchantQueryServiceImpl(
             MerchantCategoryMapper categoryMapper,
             MerchantMapper merchantMapper,
-            CacheClient cacheClient) {
+            CacheClient cacheClient,
+            TwoLevelCacheClient twoLevelCacheClient) {
         this.categoryMapper = categoryMapper;
         this.merchantMapper = merchantMapper;
         this.cacheClient = cacheClient;
+        this.twoLevelCacheClient = twoLevelCacheClient;
     }
 
     @Override
     public List<MerchantCategory> listEnabledCategories() {
+        return twoLevelCacheClient.queryList(
+                CacheConstants.MERCHANT_CATEGORY_LIST_KEY,
+                MerchantCategory.class,
+                this::selectEnabledCategories,
+                MERCHANT_CATEGORY_REDIS_CACHE_TTL);
+    }
+
+    private List<MerchantCategory> selectEnabledCategories() {
         return categoryMapper.selectList(new LambdaQueryWrapper<MerchantCategory>()
                 .eq(MerchantCategory::getStatus, 1)
                 .orderByAsc(MerchantCategory::getSortOrder)

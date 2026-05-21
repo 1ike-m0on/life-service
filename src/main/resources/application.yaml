@@ -59,6 +59,17 @@ rocketmq:
     send-message-timeout: ${ROCKETMQ_SEND_TIMEOUT_MS:3000}
 
 life-service:
+  cache:
+    local:
+      enabled: ${LOCAL_CACHE_ENABLED:true}
+      ttl: ${LOCAL_CACHE_TTL:5m}
+      maximum-size: ${LOCAL_CACHE_MAXIMUM_SIZE:1000}
+    invalidation:
+      enabled: ${CACHE_INVALIDATION_ENABLED:true}
+      retry-delay: ${CACHE_INVALIDATION_RETRY_DELAY:1m}
+      max-retry-count: ${CACHE_INVALIDATION_MAX_RETRY_COUNT:5}
+      retry-batch-size: ${CACHE_INVALIDATION_RETRY_BATCH_SIZE:200}
+      retry-fixed-delay-ms: ${CACHE_INVALIDATION_RETRY_FIXED_DELAY_MS:60000}
   messaging:
     order:
       provider: ${ORDER_MESSAGE_PROVIDER:rocketmq}

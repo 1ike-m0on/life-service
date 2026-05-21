@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.github.ikemoon.lifeservice.common.exception.BusinessException;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
 import io.github.ikemoon.lifeservice.infrastructure.cache.CacheClient;
+import io.github.ikemoon.lifeservice.infrastructure.cache.CacheConstants;
+import io.github.ikemoon.lifeservice.infrastructure.cache.TwoLevelCacheClient;
 import io.github.ikemoon.lifeservice.merchant.entity.Merchant;
 import io.github.ikemoon.lifeservice.merchant.entity.MerchantCategory;
 import io.github.ikemoon.lifeservice.merchant.mapper.MerchantCategoryMapper;
@@ -18,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Duration;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
@@ -39,11 +42,14 @@ class MerchantQueryServiceImplTest {
     @Mock
     private CacheClient cacheClient;
 
+    @Mock
+    private TwoLevelCacheClient twoLevelCacheClient;
+
     private MerchantQueryServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new MerchantQueryServiceImpl(categoryMapper, merchantMapper, cacheClient);
+        service = new MerchantQueryServiceImpl(categoryMapper, merchantMapper, cacheClient, twoLevelCacheClient);
     }
 
     @Test
@@ -51,7 +57,12 @@ class MerchantQueryServiceImplTest {
         MerchantCategory food = new MerchantCategory();
         food.setId(1L);
         food.setName("Food");
-        when(categoryMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(food));
+        when(twoLevelCacheClient.queryList(
+                eq(CacheConstants.MERCHANT_CATEGORY_LIST_KEY),
+                eq(MerchantCategory.class),
+                anySupplier(),
+                any(Duration.class)))
+                .thenReturn(List.of(food));
 
         assertThat(service.listEnabledCategories()).containsExactly(food);
     }
@@ -99,6 +110,10 @@ class MerchantQueryServiceImplTest {
     }
 
     private static Function<Long, Merchant> anyFunction() {
+        return any();
+    }
+
+    private static Supplier<List<MerchantCategory>> anySupplier() {
         return any();
     }
 

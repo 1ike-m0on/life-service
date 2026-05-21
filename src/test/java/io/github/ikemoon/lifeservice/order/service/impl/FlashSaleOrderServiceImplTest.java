@@ -1,15 +1,14 @@
 package io.github.ikemoon.lifeservice.order.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.github.ikemoon.lifeservice.common.exception.BusinessException;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
 import io.github.ikemoon.lifeservice.infrastructure.cache.CacheClient;
+import io.github.ikemoon.lifeservice.infrastructure.cache.CacheConstants;
 import io.github.ikemoon.lifeservice.infrastructure.id.OrderNoGenerator;
 import io.github.ikemoon.lifeservice.order.messaging.FlashSaleOrderCommand;
 import io.github.ikemoon.lifeservice.order.messaging.FlashSaleOrderMessagePublisher;
 import io.github.ikemoon.lifeservice.order.service.FlashSaleOrderResult;
 import io.github.ikemoon.lifeservice.voucher.entity.FlashSaleVoucher;
-import io.github.ikemoon.lifeservice.voucher.mapper.FlashSaleVoucherMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,7 +24,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -47,9 +45,6 @@ class FlashSaleOrderServiceImplTest {
     private OrderNoGenerator orderNoGenerator;
 
     @Mock
-    private FlashSaleVoucherMapper flashSaleVoucherMapper;
-
-    @Mock
     private FlashSaleOrderMessagePublisher orderMessagePublisher;
 
     private FlashSaleOrderServiceImpl service;
@@ -60,7 +55,6 @@ class FlashSaleOrderServiceImplTest {
                 redisTemplate,
                 cacheClient,
                 orderNoGenerator,
-                flashSaleVoucherMapper,
                 orderMessagePublisher);
     }
 
@@ -73,13 +67,13 @@ class FlashSaleOrderServiceImplTest {
     }
 
     @Test
-    void seckillReturnsNotFoundWhenFlashSaleVoucherMissing() {
+    void seckillReturnsNotReadyWhenFlashSaleVoucherCacheMissing() {
         whenFlashSaleVoucherCacheReturns(null);
 
         FlashSaleOrderResult result = service.seckill(1L, 10L);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.code()).isEqualTo(ErrorCode.NOT_FOUND);
+        assertThat(result.code()).isEqualTo(ErrorCode.FLASH_SALE_NOT_READY);
         verify(redisTemplate, never()).execute(any(RedisScript.class), anyList(), anyString(), anyString());
     }
 
@@ -127,6 +121,18 @@ class FlashSaleOrderServiceImplTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.code()).isEqualTo(ErrorCode.FLASH_SALE_DUPLICATE_ORDER);
+    }
+
+    @Test
+    void seckillReturnsNotReadyWhenRedisHotDataIsMissing() {
+        whenFlashSaleVoucherCacheReturns(activeFlashSaleVoucher());
+        whenRedisQualificationReturns(3L);
+
+        FlashSaleOrderResult result = service.seckill(1L, 10L);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.code()).isEqualTo(ErrorCode.FLASH_SALE_NOT_READY);
+        verify(orderNoGenerator, never()).nextOrderNo(anyString());
     }
 
     @Test
@@ -182,7 +188,7 @@ class FlashSaleOrderServiceImplTest {
     }
 
     @Test
-    void seckillUsesFlashSaleVoucherCacheBeforeRedisQualification() {
+    void seckillUsesFlashSaleVoucherHotCacheBeforeRedisQualification() {
         whenFlashSaleVoucherCacheReturns(activeFlashSaleVoucher());
         whenRedisQualificationReturns(1L);
 
@@ -190,7 +196,7 @@ class FlashSaleOrderServiceImplTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.code()).isEqualTo(ErrorCode.FLASH_SALE_STOCK_NOT_ENOUGH);
-        verify(flashSaleVoucherMapper, never()).selectOne(any(LambdaQueryWrapper.class));
+        verify(cacheClient).get(CacheConstants.FLASH_SALE_VOUCHER_KEY_PREFIX + 1L, FlashSaleVoucher.class);
     }
 
     private void whenRedisQualificationReturns(Long result) {
@@ -199,13 +205,7 @@ class FlashSaleOrderServiceImplTest {
     }
 
     private void whenFlashSaleVoucherCacheReturns(FlashSaleVoucher voucher) {
-        when(cacheClient.queryWithPassThrough(
-                anyString(),
-                anyLong(),
-                any(),
-                any(),
-                any(),
-                any()))
+        when(cacheClient.get(CacheConstants.FLASH_SALE_VOUCHER_KEY_PREFIX + 1L, FlashSaleVoucher.class))
                 .thenReturn(voucher);
     }
 

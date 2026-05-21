@@ -2,6 +2,7 @@ package io.github.ikemoon.lifeservice.order.service.stock;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import io.github.ikemoon.lifeservice.infrastructure.cache.CacheConstants;
 import io.github.ikemoon.lifeservice.order.service.close.OrderCloseProperties;
 import io.github.ikemoon.lifeservice.order.entity.StockReleaseTask;
 import io.github.ikemoon.lifeservice.order.enums.StockReleaseTaskStatus;
@@ -19,8 +20,6 @@ import java.util.List;
 public class StockReleaseService {
 
     private static final Logger log = LoggerFactory.getLogger(StockReleaseService.class);
-    private static final String FLASH_SALE_STOCK_KEY_PREFIX = "life:flash:voucher:stock:";
-    private static final String FLASH_SALE_RELEASED_ORDER_KEY_PREFIX = "life:flash:voucher:released-orders:";
     private static final DefaultRedisScript<Long> RELEASE_REDIS_STOCK_SCRIPT = new DefaultRedisScript<>();
 
     static {
@@ -62,8 +61,14 @@ public class StockReleaseService {
             stockReleaseTxService.releaseMysqlStockAndMarkSuccess(task);
             return true;
         } catch (RuntimeException e) {
-            markRetry(task, e);
-            log.warn("Stock release failed, orderId={}, voucherId={}", task.getOrderId(), task.getVoucherId(), e);
+            RetryDecision decision = markRetry(task, e);
+            if (decision.failed()) {
+                log.error("Stock release retry exhausted, orderId={}, voucherId={}, retryCount={}",
+                        task.getOrderId(), task.getVoucherId(), decision.retryCount(), e);
+            } else {
+                log.warn("Stock release failed, orderId={}, voucherId={}, retryCount={}",
+                        task.getOrderId(), task.getVoucherId(), decision.retryCount(), e);
+            }
             return false;
         }
     }
@@ -93,7 +98,7 @@ public class StockReleaseService {
         }
     }
 
-    private void markRetry(StockReleaseTask task, RuntimeException error) {
+    private RetryDecision markRetry(StockReleaseTask task, RuntimeException error) {
         int nextRetryCount = task.getRetryCount() == null ? 1 : task.getRetryCount() + 1;
         int nextStatus = nextRetryCount >= properties.getStockReleaseMaxRetryCount()
                 ? StockReleaseTaskStatus.FAILED.code()
@@ -107,14 +112,15 @@ public class StockReleaseService {
                 .set("updated_at", now)
                 .eq("id", task.getId())
                 .eq("status", StockReleaseTaskStatus.PENDING.code()));
+        return new RetryDecision(nextRetryCount, nextStatus == StockReleaseTaskStatus.FAILED.code());
     }
 
     private static String stockKey(Long voucherId) {
-        return FLASH_SALE_STOCK_KEY_PREFIX + voucherId;
+        return CacheConstants.FLASH_SALE_STOCK_KEY_PREFIX + voucherId;
     }
 
     private static String releasedOrderKey(Long voucherId) {
-        return FLASH_SALE_RELEASED_ORDER_KEY_PREFIX + voucherId;
+        return CacheConstants.FLASH_SALE_RELEASED_ORDER_KEY_PREFIX + voucherId;
     }
 
     private static int normalizeBatchSize(int batchSize) {
@@ -126,5 +132,8 @@ public class StockReleaseService {
             return null;
         }
         return message.length() <= 255 ? message : message.substring(0, 255);
+    }
+
+    private record RetryDecision(int retryCount, boolean failed) {
     }
 }
