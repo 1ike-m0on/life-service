@@ -20,6 +20,13 @@ Then start the services:
 docker compose --env-file deploy/.env -f deploy/docker-compose.dev.yml up -d
 ```
 
+The default command starts MySQL, Redis, RocketMQ NameServer, and RocketMQ
+Broker. RocketMQ Dashboard is optional to reduce local memory pressure:
+
+```powershell
+docker compose --profile dashboard --env-file deploy/.env -f deploy/docker-compose.dev.yml up -d
+```
+
 Stop the services:
 
 ```powershell
@@ -56,8 +63,40 @@ RocketMQ ports:
 ```text
 NameServer: localhost:9876
 Broker:     localhost:10911
-Dashboard:  http://localhost:18082
+Dashboard:  http://localhost:18082  (only with --profile dashboard)
 ```
 
 If Docker runs inside a VM, set `ROCKETMQ_BROKER_IP` in `deploy/.env` to the VM
 IP address that your host Spring Boot process can reach.
+
+## Resource Limits
+
+The compose file sets conservative local limits to avoid Docker Desktop or WSL
+using too much memory on Windows:
+
+```text
+MySQL:              768m, 1 CPU, InnoDB buffer pool 128M
+Redis:              256m, 0.5 CPU, maxmemory 128mb, noeviction
+RocketMQ NameServer:384m, 0.5 CPU, JVM Xmx 192m
+RocketMQ Broker:    1024m, 1 CPU, JVM Xmx 512m
+RocketMQ Dashboard: 512m, 0.5 CPU, JVM Xmx 256m, optional profile
+```
+
+If the machine still becomes unstable, lower the `*_MEM_LIMIT`, `*_CPUS`, and
+RocketMQ `*_JAVA_OPT*` values in ignored `deploy/.env`. On Docker Desktop with
+WSL2, also cap WSL globally in `%UserProfile%\.wslconfig`, for example:
+
+```ini
+[wsl2]
+memory=4GB
+processors=4
+swap=2GB
+```
+
+After changing `.wslconfig`, run:
+
+```powershell
+wsl --shutdown
+```
+
+Then start Docker Desktop again.

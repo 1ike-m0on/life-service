@@ -57,6 +57,7 @@ Life Service 是一个基于 Java 21 和 Spring Boot 3 的生活服务后端项�
 
 - 秒杀入口只读取 Redis 热数据，缺失时直接失败，不回源 MySQL
 - 秒杀预热接口写入券元数据、Redis 库存，并重建用户集合就绪标记与已有订单用户
+- 应用启动时默认自动预热未结束的秒杀券，便于脚手架阶段开箱联调；后续接入管理端后可关闭
 - Redis Lua 防超卖
 - Redis Set 保证一人一单资格
 - RocketMQ 异步下单
@@ -139,24 +140,53 @@ Content-Type: application/json
 Authorization: Bearer {token}
 ```
 
-## 前端联调面板
+## 前端
 
-当前仓库提供一个轻量静态前端控制台，随 Spring Boot 静态资源一起托管，不需要额外安装 Node.js 依赖。
+当前仓库新增 `frontend/` Vue 3 前端工程，用于提供一个适配 PC 浏览器的本地生活用户端原型，而不是接口测试面板或后台 Dashboard。
 
-启动后访问：
+前端主流程包括：
+
+- 浏览商户分类和商户列表
+- 查看商户详情和优惠券
+- 邮箱登录并保存 Token
+- 体验秒杀券下单
+- 查看最近订单并模拟支付
+- 未完成的用户入口统一提示“功能未完成”
+
+前端本地启动：
+
+```bash
+cd frontend
+corepack enable
+corepack prepare pnpm@10.11.0 --activate
+pnpm install
+pnpm run dev
+```
+
+Vite 开发服务默认运行在：
+
+```text
+http://localhost:5173/
+```
+
+开发环境会将 `/api` 代理到 Spring Boot：
+
+```text
+http://localhost:8081
+```
+
+构建：
+
+```bash
+cd frontend
+pnpm run build
+```
+
+旧版 Spring Boot 静态联调页仍可作为轻量调试入口保留：
 
 ```text
 http://localhost:8081/app/index.html
 ```
-
-控制台当前支持：
-
-- 查询商户分类、商户列表、商户详情和商户优惠券
-- 触发秒杀券预热
-- 发送秒杀下单请求，并自动记录成功订单号
-- 模拟订单支付回调
-- 触发商户详情和秒杀同用户限流测试
-- 展示 HTTP 状态码、业务码、耗时和 `X-Trace-Id`
 
 秒杀预热示例：
 
@@ -225,6 +255,12 @@ ROCKETMQ_NAME_SERVER=192.168.150.101:9876 \
 mvn spring-boot:run
 ```
 
+启动秒杀券自动预热默认开启。脚手架阶段没有管理端时，应用启动会把未结束、状态为未开始或进行中的秒杀券写入 Redis 热数据；后续有优惠券发布流程后，可以关闭该行为：
+
+```bash
+FLASH_SALE_STARTUP_WARMUP_ENABLED=false mvn spring-boot:run
+```
+
 ## 测试
 
 运行单元测试：
@@ -244,6 +280,7 @@ mvn test
 - 库存释放补偿
 - 支付和关单并发状态判断
 - 滑动窗口限流注解、Key 解析和 Redis Lua 客户端
+- 启动时秒杀券自动预热
 
 ## 项目结构
 

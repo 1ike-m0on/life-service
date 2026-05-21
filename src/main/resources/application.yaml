@@ -79,6 +79,11 @@ life-service:
     rocketmq:
       flash-sale-order-topic: ${FLASH_SALE_ORDER_TOPIC:life-service-flash-sale-order}
       flash-sale-order-consumer-group: ${FLASH_SALE_ORDER_CONSUMER_GROUP:life-service-flash-sale-order-consumer}
+  flash-sale:
+    warmup:
+      enabled: ${FLASH_SALE_STARTUP_WARMUP_ENABLED:true}
+      fail-fast: ${FLASH_SALE_STARTUP_WARMUP_FAIL_FAST:false}
+      max-vouchers: ${FLASH_SALE_STARTUP_WARMUP_MAX_VOUCHERS:200}
   order:
     close:
       enabled: ${ORDER_CLOSE_ENABLED:true}

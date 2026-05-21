@@ -5,6 +5,9 @@ services:
     image: mysql:8.0
     container_name: life-service-mysql
     restart: unless-stopped
+    mem_limit: ${MYSQL_MEM_LIMIT:-768m}
+    memswap_limit: ${MYSQL_MEMSWAP_LIMIT:-768m}
+    cpus: ${MYSQL_CPUS:-1.0}
     environment:
       TZ: Asia/Shanghai
       MYSQL_ALLOW_EMPTY_PASSWORD: ${MYSQL_ALLOW_EMPTY_PASSWORD:-yes}
@@ -16,6 +19,9 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=+08:00
+      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-128M}
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-80}
+      - --performance-schema=${MYSQL_PERFORMANCE_SCHEMA:-OFF}
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -31,6 +37,9 @@ services:
     image: redis:7.2
     container_name: life-service-redis
     restart: unless-stopped
+    mem_limit: ${REDIS_MEM_LIMIT:-256m}
+    memswap_limit: ${REDIS_MEMSWAP_LIMIT:-256m}
+    cpus: ${REDIS_CPUS:-0.5}
     environment:
       TZ: Asia/Shanghai
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
@@ -38,8 +47,8 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     command: >
       sh -c 'if [ -n "$$REDIS_PASSWORD" ];
-      then redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD";
-      else redis-server --appendonly yes;
+      then redis-server --appendonly yes --maxmemory ${REDIS_MAXMEMORY:-128mb} --maxmemory-policy noeviction --requirepass "$$REDIS_PASSWORD";
+      else redis-server --appendonly yes --maxmemory ${REDIS_MAXMEMORY:-128mb} --maxmemory-policy noeviction;
       fi'
     volumes:
       - redis_data:/data
@@ -55,9 +64,12 @@ services:
     image: apache/rocketmq:${ROCKETMQ_VERSION:-5.5.0}
     container_name: life-service-rocketmq-namesrv
     restart: unless-stopped
+    mem_limit: ${ROCKETMQ_NAMESRV_MEM_LIMIT:-384m}
+    memswap_limit: ${ROCKETMQ_NAMESRV_MEMSWAP_LIMIT:-384m}
+    cpus: ${ROCKETMQ_NAMESRV_CPUS:-0.5}
     environment:
       TZ: Asia/Shanghai
-      JAVA_OPT_EXT: "-server -Xms256m -Xmx256m -Xmn128m"
+      JAVA_OPT_EXT: "${ROCKETMQ_NAMESRV_JAVA_OPT_EXT:--server -Xms192m -Xmx192m -Xmn96m}"
     ports:
       - "${ROCKETMQ_NAMESRV_PORT:-9876}:9876"
     command: sh mqnamesrv
@@ -70,13 +82,16 @@ services:
     image: apache/rocketmq:${ROCKETMQ_VERSION:-5.5.0}
     container_name: life-service-rocketmq-broker
     restart: unless-stopped
+    mem_limit: ${ROCKETMQ_BROKER_MEM_LIMIT:-1024m}
+    memswap_limit: ${ROCKETMQ_BROKER_MEMSWAP_LIMIT:-1024m}
+    cpus: ${ROCKETMQ_BROKER_CPUS:-1.0}
     user: root
     depends_on:
       - rocketmq-namesrv
     environment:
       TZ: Asia/Shanghai
       NAMESRV_ADDR: rocketmq-namesrv:9876
-      JAVA_OPT_EXT: "-server -Xms512m -Xmx512m -Xmn256m"
+      JAVA_OPT_EXT: "${ROCKETMQ_BROKER_JAVA_OPT_EXT:--server -Xms512m -Xmx512m -Xmn256m}"
     ports:
       - "${ROCKETMQ_BROKER_FAST_PORT:-10909}:10909"
       - "${ROCKETMQ_BROKER_PORT:-10911}:10911"
@@ -108,13 +123,18 @@ services:
   rocketmq-dashboard:
     image: apacherocketmq/rocketmq-dashboard:latest
     container_name: life-service-rocketmq-dashboard
+    profiles:
+      - dashboard
     restart: unless-stopped
+    mem_limit: ${ROCKETMQ_DASHBOARD_MEM_LIMIT:-512m}
+    memswap_limit: ${ROCKETMQ_DASHBOARD_MEMSWAP_LIMIT:-512m}
+    cpus: ${ROCKETMQ_DASHBOARD_CPUS:-0.5}
     depends_on:
       - rocketmq-namesrv
       - rocketmq-broker
     environment:
       TZ: Asia/Shanghai
-      JAVA_OPTS: "-Drocketmq.namesrv.addr=rocketmq-namesrv:9876"
+      JAVA_OPTS: "${ROCKETMQ_DASHBOARD_JAVA_OPTS:--Xms256m -Xmx256m -Drocketmq.namesrv.addr=rocketmq-namesrv:9876}"
     ports:
       - "${ROCKETMQ_DASHBOARD_PORT:-18082}:8082"
     networks:
