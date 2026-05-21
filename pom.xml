@@ -20,6 +20,7 @@
     <properties>
         <java.version>21</java.version>
         <mybatis-plus.version>3.5.15</mybatis-plus.version>
+        <rocketmq-spring.version>2.3.5</rocketmq-spring.version>
     </properties>
 
     <dependencies>
@@ -61,6 +62,17 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-mysql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-spring-boot-starter</artifactId>
+            <version>${rocketmq-spring.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
