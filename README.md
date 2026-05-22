@@ -423,6 +423,18 @@ http://localhost:8081
 mvn test
 ```
 
+后端测试并生成覆盖率报告：
+
+```bash
+mvn verify
+```
+
+JaCoCo HTML 报告输出到：
+
+```text
+target/site/jacoco/index.html
+```
+
 前端类型检查与构建：
 
 ```bash
@@ -469,10 +481,12 @@ pnpm run build
 
 GitHub Actions currently checks:
 
-- Maven test
+- Maven test and JaCoCo coverage gate
 - Frontend build
 - Docker image build
 - Docker Compose config validation
+
+Coverage reports are uploaded as the `jacoco-report` workflow artifact.
 
 The repository also includes a Docker publish workflow for GHCR images:
 
