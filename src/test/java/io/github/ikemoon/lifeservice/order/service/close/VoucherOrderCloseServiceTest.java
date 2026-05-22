@@ -61,6 +61,18 @@ class VoucherOrderCloseServiceTest {
     }
 
     @Test
+    void closeExpiredOrdersReturnsZeroSummaryWhenNoOrderIsExpired() {
+        when(voucherOrderMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of());
+
+        OrderCloseSummary summary = service.closeExpiredOrders();
+
+        assertThat(summary.scanned()).isZero();
+        assertThat(summary.closed()).isZero();
+        assertThat(summary.stockReleased()).isZero();
+        assertThat(summary.failed()).isZero();
+    }
+
+    @Test
     void closeExpiredOrdersDoesNotReleaseStockWhenCloseLosesRace() {
         when(voucherOrderMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of(order()));
         when(closeTxService.closeExpiredOrder(any(VoucherOrder.class), any(LocalDateTime.class))).thenReturn(null);
@@ -71,6 +83,41 @@ class VoucherOrderCloseServiceTest {
         assertThat(summary.closed()).isZero();
         assertThat(summary.stockReleased()).isZero();
         assertThat(summary.failed()).isZero();
+    }
+
+    @Test
+    void closeExpiredOrdersCountsFailureWhenStockReleaseFails() {
+        StockReleaseTask task = task();
+        when(voucherOrderMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of(order()));
+        when(closeTxService.closeExpiredOrder(any(VoucherOrder.class), any(LocalDateTime.class))).thenReturn(task);
+        when(stockReleaseService.release(task)).thenReturn(false);
+
+        OrderCloseSummary summary = service.closeExpiredOrders();
+
+        assertThat(summary.scanned()).isEqualTo(1);
+        assertThat(summary.closed()).isEqualTo(1);
+        assertThat(summary.stockReleased()).isZero();
+        assertThat(summary.failed()).isEqualTo(1);
+    }
+
+    @Test
+    void closeExpiredOrdersContinuesWhenOneOrderThrows() {
+        VoucherOrder first = order();
+        VoucherOrder second = order();
+        second.setId(101L);
+        StockReleaseTask task = task();
+        when(voucherOrderMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of(first, second));
+        when(closeTxService.closeExpiredOrder(any(VoucherOrder.class), any(LocalDateTime.class)))
+                .thenThrow(new IllegalStateException("db busy"))
+                .thenReturn(task);
+        when(stockReleaseService.release(task)).thenReturn(true);
+
+        OrderCloseSummary summary = service.closeExpiredOrders();
+
+        assertThat(summary.scanned()).isEqualTo(2);
+        assertThat(summary.closed()).isEqualTo(1);
+        assertThat(summary.stockReleased()).isEqualTo(1);
+        assertThat(summary.failed()).isEqualTo(1);
     }
 
     private static VoucherOrder order() {

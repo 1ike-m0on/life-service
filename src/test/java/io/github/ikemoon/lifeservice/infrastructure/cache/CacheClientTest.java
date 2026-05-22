@@ -164,6 +164,67 @@ class CacheClientTest {
         verify(redisTemplate).delete("lock:merchant:10");
     }
 
+    @Test
+    void queryWithLogicalExpireReturnsNullWhenCacheIsMissing() {
+        when(valueOperations.get("merchant:10")).thenReturn(null);
+
+        Merchant result = cacheClient.queryWithLogicalExpire(
+                "merchant:",
+                "lock:merchant:",
+                10L,
+                Merchant.class,
+                id -> merchant(10L, "Fresh Coffee Shop"),
+                CACHE_TTL,
+                Duration.ofSeconds(10));
+
+        assertThat(result).isNull();
+        verify(valueOperations, never()).setIfAbsent(anyString(), anyString(), eq(Duration.ofSeconds(10)));
+    }
+
+    @Test
+    void queryWithLogicalExpireReturnsFreshValueWithoutRebuildWhenNotExpired() throws Exception {
+        Merchant fresh = merchant(10L, "Fresh Coffee Shop");
+        String payload = objectMapper.writeValueAsString(Map.of(
+                "data", fresh,
+                "expireAt", LocalDateTime.now().plusMinutes(5).toString()));
+        when(valueOperations.get("merchant:10")).thenReturn(payload);
+
+        Merchant result = cacheClient.queryWithLogicalExpire(
+                "merchant:",
+                "lock:merchant:",
+                10L,
+                Merchant.class,
+                id -> merchant(10L, "Unexpected Rebuild"),
+                CACHE_TTL,
+                Duration.ofSeconds(10));
+
+        assertThat(result.getName()).isEqualTo("Fresh Coffee Shop");
+        verify(valueOperations, never()).setIfAbsent(anyString(), anyString(), eq(Duration.ofSeconds(10)));
+    }
+
+    @Test
+    void queryWithLogicalExpireReturnsStaleValueWithoutRebuildWhenLockIsBusy() throws Exception {
+        Merchant stale = merchant(10L, "Old Coffee Shop");
+        String payload = objectMapper.writeValueAsString(Map.of(
+                "data", stale,
+                "expireAt", LocalDateTime.now().minusSeconds(1).toString()));
+        when(valueOperations.get("merchant:10")).thenReturn(payload);
+        when(valueOperations.setIfAbsent("lock:merchant:10", "1", Duration.ofSeconds(10))).thenReturn(false);
+
+        Merchant result = cacheClient.queryWithLogicalExpire(
+                "merchant:",
+                "lock:merchant:",
+                10L,
+                Merchant.class,
+                id -> merchant(10L, "Unexpected Rebuild"),
+                CACHE_TTL,
+                Duration.ofSeconds(10));
+
+        assertThat(result.getName()).isEqualTo("Old Coffee Shop");
+        verify(valueOperations, never()).set(eq("merchant:10"), anyString());
+        verify(redisTemplate, never()).delete("lock:merchant:10");
+    }
+
     private static Merchant merchant(Long id, String name) {
         Merchant merchant = new Merchant();
         merchant.setId(id);

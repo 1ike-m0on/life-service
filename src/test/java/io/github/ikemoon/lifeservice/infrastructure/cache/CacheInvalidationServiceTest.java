@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -67,6 +68,30 @@ class CacheInvalidationServiceTest {
     }
 
     @Test
+    void invalidateAbbreviatesLongFailureReason() {
+        when(redisTemplate.delete(CACHE_KEY)).thenThrow(new RedisConnectionFailureException("redis down"));
+        String longReason = "x".repeat(300);
+
+        boolean result = service.invalidate(CACHE_KEY, longReason);
+
+        assertThat(result).isFalse();
+        ArgumentCaptor<CacheDeleteTask> taskCaptor = ArgumentCaptor.forClass(CacheDeleteTask.class);
+        verify(cacheDeleteTaskMapper).insert(taskCaptor.capture());
+        assertThat(taskCaptor.getValue().getReason()).hasSize(255);
+    }
+
+    @Test
+    void retryPendingTasksReturnsZeroWhenNoTaskIsDue() {
+        when(cacheDeleteTaskMapper.selectList(any())).thenReturn(List.of());
+
+        int deleted = service.retryPendingTasks();
+
+        assertThat(deleted).isZero();
+        verify(localCacheService, never()).invalidate(CACHE_KEY);
+        verify(redisTemplate, never()).delete(CACHE_KEY);
+    }
+
+    @Test
     void retryPendingTasksMarksSuccessWhenRedisDeleteSucceeds() {
         CacheDeleteTask task = pendingTask(1L, 0);
         when(cacheDeleteTaskMapper.selectList(any())).thenReturn(List.of(task));
@@ -82,6 +107,31 @@ class CacheInvalidationServiceTest {
     @Test
     void retryPendingTasksKeepsPendingBeforeMaxRetryCount() {
         CacheDeleteTask task = pendingTask(1L, 3);
+        when(cacheDeleteTaskMapper.selectList(any())).thenReturn(List.of(task));
+        when(redisTemplate.delete(CACHE_KEY)).thenThrow(new RedisConnectionFailureException("redis down"));
+
+        int deleted = service.retryPendingTasks();
+
+        assertThat(deleted).isZero();
+        verify(cacheDeleteTaskMapper).update(eq(null), any());
+    }
+
+    @Test
+    void retryPendingTasksTreatsNullRetryCountAsFirstRetry() {
+        CacheDeleteTask task = pendingTask(1L, 0);
+        task.setRetryCount(null);
+        when(cacheDeleteTaskMapper.selectList(any())).thenReturn(List.of(task));
+        when(redisTemplate.delete(CACHE_KEY)).thenThrow(new RedisConnectionFailureException("redis down"));
+
+        int deleted = service.retryPendingTasks();
+
+        assertThat(deleted).isZero();
+        verify(cacheDeleteTaskMapper).update(eq(null), any());
+    }
+
+    @Test
+    void retryPendingTasksMarksFailedWhenMaxRetryCountReached() {
+        CacheDeleteTask task = pendingTask(1L, 4);
         when(cacheDeleteTaskMapper.selectList(any())).thenReturn(List.of(task));
         when(redisTemplate.delete(CACHE_KEY)).thenThrow(new RedisConnectionFailureException("redis down"));
 
