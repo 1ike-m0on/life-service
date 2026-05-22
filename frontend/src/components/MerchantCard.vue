@@ -1,6 +1,6 @@
 <template>
   <article class="merchant-card" @click="$emit('open', merchant.id)">
-    <img class="merchant-card__image" :src="coverImage" :alt="merchant.name" />
+    <img class="merchant-card__image" :src="coverImage" :alt="merchant.name" @error="useFallbackImage" />
 
     <div class="merchant-card__body">
       <div class="merchant-card__head">
@@ -55,16 +55,26 @@ defineEmits<{
 }>();
 
 const fallbackImages = [
-  'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=720&q=80',
-  'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=720&q=80',
-  'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=720&q=80',
-  'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=720&q=80',
+  '/assets/merchant-coffee.svg',
+  '/assets/merchant-hotpot.svg',
+  '/assets/merchant-bakery.svg',
+  '/assets/merchant-sushi.svg',
 ];
+
+const fallbackImage = computed(() => fallbackImages[props.merchant.id % fallbackImages.length]);
 
 const coverImage = computed(() => {
   const first = props.merchant.images?.split(',').map((item) => item.trim()).filter(Boolean)[0];
-  return first || fallbackImages[props.merchant.id % fallbackImages.length];
+  return first || fallbackImage.value;
 });
+
+function useFallbackImage(event: Event) {
+  const image = event.target as HTMLImageElement;
+  if (image.src.endsWith(fallbackImage.value)) {
+    return;
+  }
+  image.src = fallbackImage.value;
+}
 </script>
 
 <style scoped>

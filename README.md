@@ -1,129 +1,367 @@
-# 生活服务系统
+# Life Service
 
-Life Service 是一个基于 Java 21 和 Spring Boot 3 的生活服务后端项目。项目以本地生活优惠券业务为主线，逐步实现商户查询、优惠券秒杀、订单关闭、缓存一致性、限流等能力。
+一个基于 Java 21 + Spring Boot 3.5 + Vue 3 的本地生活服务脚手架，围绕商户浏览、优惠券秒杀、异步下单、订单关闭、缓存一致性、限流、登录鉴权和一键部署构建。
 
-当前版本聚焦 V2：多级缓存、缓存删除补偿、秒杀热路径预热，以及 Redis + Lua 滑动窗口限流。
+项目目标不是复刻完整商业平台，而是提供一个可以直接运行、方便继续扩展的 full-stack scaffold。clone 仓库后可以通过 Docker Compose 启动前端、后端和中间件，体验一个接近真实本地生活平台的核心链路。
 
-## 技术栈
+## Highlights
 
-- Java 21
-- Spring Boot 3.5.x
-- MyBatis-Plus
-- MySQL 8.x
-- Redis
-- RocketMQ
-- Flyway
-- JUnit 5 / Mockito
+- 用户端 PC Web：商户列表、商户详情、优惠券、秒杀下单、订单状态
+- 邮箱登录：格式校验登录、Redis Token、`Authorization: Bearer token`
+- 多级缓存：Caffeine 本地缓存 + Redis 缓存 + TTL 抖动 + 空值缓存
+- 缓存一致性：DB 更新后删除缓存，删除失败写入本地任务表并定时补偿
+- 秒杀链路：Redis 热数据预热、Lua 原子资格判断、RocketMQ 异步创建订单
+- Fail-closed 秒杀入口：秒杀热数据缺失时直接失败，不回源 MySQL 打热点
+- 一人一单与防超卖：Redis Set + Lua 前置校验，数据库唯一索引兜底
+- 订单闭环：未支付订单自动关闭，库存释放失败进入重试任务
+- 并发状态处理：模拟支付回调与超时关单使用数据库条件更新避免状态覆盖
+- 滑动窗口限流：`@RateLimiter` + AOP + Redis ZSet + Lua
+- 可观测基础：统一请求 traceId 日志、Actuator 健康检查
+- 一键部署：Docker Compose 启动 MySQL、Redis、RocketMQ、后端和前端
 
-## 当前能力
+## Architecture
 
-### 商户与优惠券
+```mermaid
+flowchart LR
+    User["Browser"] --> Nginx["Vue + Nginx"]
+    Nginx -->|/api| Backend["Spring Boot API"]
+    Backend --> LocalCache["Caffeine"]
+    Backend --> Redis["Redis"]
+    Backend --> MySQL["MySQL"]
+    Backend --> MQ["RocketMQ"]
+    MQ --> Consumer["Order Consumer"]
+    Consumer --> MySQL
+    Consumer --> Redis
+```
+
+秒杀下单主链路：
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as Spring Boot
+    participant R as Redis Lua
+    participant MQ as RocketMQ
+    participant C as Consumer
+    participant DB as MySQL
+
+    U->>API: Claim voucher
+    API->>R: Check stock and one-user-one-order
+    R-->>API: Qualified
+    API->>MQ: Send order command
+    API-->>U: Return order number
+    MQ->>C: Consume command
+    C->>DB: Insert order and deduct stock
+```
+
+## Tech Stack
+
+| Layer | Tech |
+| --- | --- |
+| Backend | Java 21, Spring Boot 3.5.x |
+| Persistence | MyBatis-Plus, MySQL 8, Flyway |
+| Cache | Redis, Caffeine |
+| Messaging | RocketMQ |
+| Frontend | Vue 3, Vite, Pinia, Axios, Vant |
+| Gateway | Nginx |
+| DevOps | Docker Compose, GitHub Actions |
+| Test | JUnit 5, Mockito |
+
+## Quick Start
+
+只需要安装 Docker Desktop 或 Docker Engine。
+
+```bash
+docker compose up -d --build
+```
+
+启动后访问：
+
+| Service | URL |
+| --- | --- |
+| Frontend | http://localhost:8080 |
+| Backend Health | http://localhost:8081/actuator/health |
+| MySQL | localhost:3307 |
+| Redis | localhost:6379 |
+| RocketMQ NameServer | localhost:9876 |
+
+停止服务：
+
+```bash
+docker compose down
+```
+
+清空本地数据：
+
+```bash
+docker compose down -v
+```
+
+更多部署说明见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
+## Screenshots
+
+| Home | Merchant Detail |
+| --- | --- |
+| ![Home](assets/screenshots/home.png) | ![Merchant Detail](assets/screenshots/merchant-detail.png) |
+
+| Flash-sale Claim | Orders |
+| --- | --- |
+| ![Flash-sale Claim](assets/screenshots/flash-sale-claim.png) | ![Orders](assets/screenshots/orders.png) |
+
+| Docker Compose Startup | Benchmark Comparison |
+| --- | --- |
+| ![Docker Compose Startup](assets/screenshots/docker-compose.png) | ![Benchmark Comparison](assets/screenshots/benchmark.png) |
+
+## Demo Account
+
+Docker demo 环境会通过 Flyway 初始化商户、优惠券、秒杀券和测试用户。
+
+```text
+demo2001@life.local
+```
+
+登录后前端会保存 Redis Token，并在需要鉴权的接口中自动携带：
+
+```http
+Authorization: Bearer {token}
+```
+
+## Demo Flow
+
+Reviewer 可以按下面的路径体验核心功能：
+
+1. Start the full stack.
+
+```bash
+docker compose up -d --build
+```
+
+2. Open the frontend.
+
+```text
+http://localhost:8080
+```
+
+3. Log in with the demo account.
+
+```text
+demo2001@life.local
+```
+
+4. Browse merchant categories and merchant cards on the home page.
+
+5. Open a merchant detail page and check the available vouchers.
+
+6. Claim a flash-sale voucher.
+
+Expected business feedback:
+
+```text
+success: returns an order number
+stock insufficient: returns a normal business failure
+duplicate claim: returns a normal business failure
+hot data not ready: fail closed instead of querying MySQL
+rate limited: returns a traffic protection message
+```
+
+7. Open the orders page and check the order status.
+
+8. Use the simulated payment action to verify paid / closed state handling.
+
+9. Check backend health.
+
+```text
+http://localhost:8081/actuator/health
+```
+
+## Feature Overview
+
+### Merchant and Voucher
 
 - 商户分类查询
-- 商户列表与商户详情查询
-- 商户详情 Redis 缓存
-- 秒杀券基础数据与库存表结构
+- 商户列表分页查询
+- 商户详情查询
+- 商户优惠券列表
+- 商户详情缓存
+- PC 用户端浏览体验
 
-### 缓存优化
+### Cache
 
-- 缓存空值，防止缓存穿透
-- TTL 随机抖动，降低缓存雪崩风险
-- 逻辑过期缓存客户端
+- Redis cache-aside 查询封装
 - Caffeine + Redis 二级缓存
-- 缓存删除失败补偿任务表
+- 缓存空值防穿透
+- TTL 随机抖动防雪崩
+- DB 更新后删除缓存
+- 缓存删除失败本地任务表补偿
 
-### 滑动窗口限流
+### Flash Sale
 
-- `@RateLimiter` 注解 + AOP 无侵入限流
-- Redis ZSet + Lua 原子滑动窗口计数
-- 支持 `GLOBAL`、`IP`、`USER` 三种维度
-- 秒杀下单接口启用全局、用户、IP 三层限流
-- 普通商户查询限流 Redis 异常时 fail open，秒杀限流异常时 fail closed
-
-### 秒杀下单
-
-当前秒杀入口链路：
-
-```text
-读取秒杀券缓存
-  -> Java 校验活动时间
-  -> Redis Lua 原子判断库存和一人一单
-  -> 生成订单号
-  -> 发送 RocketMQ 消息
-  -> Consumer 异步创建订单并扣减 MySQL 库存
-```
-
-已实现：
-
-- 秒杀入口只读取 Redis 热数据，缺失时直接失败，不回源 MySQL
-- 秒杀预热接口写入券元数据、Redis 库存，并重建用户集合就绪标记与已有订单用户
-- 应用启动时默认自动预热未结束的秒杀券，便于脚手架阶段开箱联调；后续接入管理端后可关闭
-- Redis Lua 防超卖
-- Redis Set 保证一人一单资格
+- 秒杀券启动预热
+- 秒杀入口只读 Redis 热数据
+- Redis Lua 原子判断库存和一人一单
+- 订单号由 Redis 当日递增序列生成
 - RocketMQ 异步下单
-- MQ 发送失败时回滚 Redis 资格
+- MQ 发送失败回滚 Redis 资格
+- Consumer 异步写入订单并扣减 MySQL 库存
 - 数据库唯一索引兜底防重复订单
-- 业务单号：`LSO + yyyyMMdd + Redis 当日递增序列`
 
-### 订单关闭
+### Order
 
-未支付订单关闭链路：
+- 待支付订单超时自动关闭
+- 关单后释放 Redis 和 MySQL 库存
+- 库存释放失败进入重试任务
+- 多次失败后保留失败记录
+- 模拟支付接口验证支付与关单并发
+- 支付成功、重复支付、订单已关闭等状态分支
 
-```text
-Spring Task 扫描超时待支付订单
-  -> 条件更新 PENDING_PAYMENT -> CLOSED
-  -> 写入库存释放补偿任务
-  -> 释放 Redis 库存
-  -> 释放 MySQL 库存并标记任务成功
-```
+### Rate Limit and Logging
 
-已实现：
+- 注解式限流：`@RateLimiter`
+- 支持 `GLOBAL`、`IP`、`USER` 三种维度
+- Redis ZSet + Lua 实现滑动窗口
+- 普通查询 Redis 异常时 fail open
+- 秒杀入口 Redis 异常时 fail closed
+- 请求 traceId 写入日志 MDC
 
-- 超时待支付订单自动关闭
-- 只关闭 `PENDING_PAYMENT` 订单
-- 库存释放失败后进入补偿任务重试
-- 多次失败后保留失败记录，便于后续人工处理或补偿系统接入
+## Benchmark
 
-### 支付和关单并发
+The benchmark data below is from a local Windows + Docker/VM development
+environment. It compares the old synchronous order path with the final warmup
+version of the Redis Lua + RocketMQ path. The goal is to show the effect of
+removing database operations from the request hot path, not to claim a
+production SLA.
 
-当前版本不接真实支付网关，只提供模拟支付接口用于验证状态并发：
+### Sync Baseline vs Optimized Path
 
-```text
-POST /api/v1/voucher-orders/{orderNo}/payment
-Header: Authorization: Bearer {token}
-```
-
-支付和关单都依赖数据库条件更新：
-
-```text
-支付: where order_no = ? and user_id = ? and status = 1
-关单: where id = ? and status = 1 and created_at <= ?
-```
-
-因此：
-
-- 支付先成功，关单不会覆盖为关闭
-- 关单先成功，支付返回 `ORDER_CLOSED`
-- 重复支付已支付订单返回幂等成功
-
-真实支付流水、退款单、退款补偿任务属于后续版本范围。
-
-## 接口示例
+Test scenario:
 
 ```text
-GET  /api/v1/merchant-categories
-GET  /api/v1/merchants
-GET  /api/v1/merchants/{id}
-GET  /api/v1/merchants/{merchantId}/vouchers
-POST /api/v1/auth/login
-GET  /api/v1/auth/me
-POST /api/v1/auth/logout
-POST /api/v1/flash-sale-vouchers/{voucherId}/warmup
-POST /api/v1/flash-sale-vouchers/{voucherId}/orders
-POST /api/v1/voucher-orders/{orderNo}/payment
+scenario: successful order path
+total requests: 12000
+users: 12000 unique users
+stock: 12000
+threads: 200
+ramp-up: 10s
+loop count: 60
+business exception expectation: 0%
 ```
 
-邮箱登录示例：
+This is not a stock-insufficient fast-fail test. It is a successful path test
+where all 12000 users can obtain an order qualification.
+
+Baseline endpoint:
+
+```text
+POST /api/v1/flash-sale-vouchers/1001/orders/sync-baseline
+```
+
+Baseline path:
+
+```text
+MySQL voucher query
+Redis user lock
+MySQL user-order query
+MySQL stock deduction
+MySQL order insert
+```
+
+Optimized endpoint:
+
+```text
+POST /api/v1/flash-sale-vouchers/1001/orders
+```
+
+Optimized path:
+
+```text
+warm up flash-sale hot data
+read Redis only in the request path
+Redis Lua stock and one-user-one-order qualification
+generate order number
+send RocketMQ order command
+consumer persists order asynchronously
+```
+
+| Metric | Sync baseline | Optimized path |
+| --- | ---: | ---: |
+| Samples | 12000 | 12000 |
+| Average latency | 893 ms | 6 ms |
+| Median latency | 956 ms | 7 ms |
+| P90 | 1067 ms | 10 ms |
+| P95 | 1099 ms | 11 ms |
+| P99 | 1145 ms | 14 ms |
+| Min | 59 ms | not recorded |
+| Max | 1923 ms | 76 ms |
+| Throughput | 190.2 req/s | 1176.4 req/s |
+| Business exception rate | 0.00% | 0.00% |
+
+Improvement:
+
+```text
+average latency: 893ms -> 6ms, about 99.3% lower
+P90 latency:      1067ms -> 10ms, about 99.1% lower
+P95 latency:      1099ms -> 11ms, about 99.0% lower
+P99 latency:      1145ms -> 14ms, about 98.8% lower
+max latency:      1923ms -> 76ms, about 96.0% lower
+throughput:       190.2 req/s -> 1176.4 req/s, about 6.2x higher
+```
+
+The old synchronous path performs MySQL voucher query, user-order query, hot-row
+stock update, and order insert in the request thread. Under concurrency, the
+stock update becomes the main bottleneck because all requests compete for the
+same MySQL row lock.
+
+The optimized path relies on warmup data, reads Redis only in the request path,
+uses Lua for stock qualification and one-user-one-order checks, then sends an
+order command to RocketMQ. The request thread no longer performs MySQL queries,
+hot-row stock deduction, or synchronous order insertion.
+
+The business exception rate is shown only to indicate that this test is a
+successful-path comparison. In real load testing, whether a request should be
+classified as failed depends on the scenario-specific latency threshold, not
+only on HTTP or business error codes.
+
+### Current Local Capacity Observation
+
+In the current local environment, the most stable result appears around
+1000-1100+ req/s for the core flash-sale path. When the target pressure is pushed
+higher, latency and tail latency rise quickly, which indicates that the local
+single-instance stack or the pressure client starts to queue.
+
+Therefore, the current conclusion is conservative:
+
+```text
+verified: around 1000-1100+ req/s local flash-sale success path with low latency
+not claimed: stable 3000+ req/s or production-grade high availability
+```
+
+Future versions should add metrics and protection automation:
+
+```text
+1. monitor core endpoint latency, P95/P99, error rate, and MQ backlog
+2. trigger stricter rate limits when latency rises abnormally
+3. protect successful core traffic during overload
+4. expose metrics through Prometheus / Grafana
+5. validate multi-instance deployment instead of relying on a single local node
+```
+
+## API Overview
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/merchant-categories` | List merchant categories |
+| `GET` | `/api/v1/merchants` | Page merchants |
+| `GET` | `/api/v1/merchants/{id}` | Get merchant detail |
+| `GET` | `/api/v1/merchants/{merchantId}/vouchers` | List vouchers |
+| `POST` | `/api/v1/auth/login` | Email login |
+| `GET` | `/api/v1/auth/me` | Current user |
+| `POST` | `/api/v1/auth/logout` | Logout |
+| `POST` | `/api/v1/flash-sale-vouchers/{voucherId}/warmup` | Warm up flash-sale voucher |
+| `POST` | `/api/v1/flash-sale-vouchers/{voucherId}/orders` | Create flash-sale order |
+| `POST` | `/api/v1/voucher-orders/{orderNo}/payment` | Simulate payment callback |
+
+登录示例：
 
 ```http
 POST /api/v1/auth/login
@@ -134,26 +372,28 @@ Content-Type: application/json
 }
 ```
 
-登录成功后，秒杀下单和支付接口需要携带：
+秒杀下单示例：
 
 ```http
+POST /api/v1/flash-sale-vouchers/1001/orders
 Authorization: Bearer {token}
 ```
 
-## 前端
+## Local Development
 
-当前仓库新增 `frontend/` Vue 3 前端工程，用于提供一个适配 PC 浏览器的本地生活用户端原型，而不是接口测试面板或后台 Dashboard。
+如果希望在宿主机运行后端和前端，只启动中间件：
 
-前端主流程包括：
+```bash
+docker compose --env-file deploy/.env -f deploy/docker-compose.dev.yml up -d
+```
 
-- 浏览商户分类和商户列表
-- 查看商户详情和优惠券
-- 邮箱登录并保存 Token
-- 体验秒杀券下单
-- 查看最近订单并模拟支付
-- 未完成的用户入口统一提示“功能未完成”
+启动后端：
 
-前端本地启动：
+```bash
+mvn spring-boot:run
+```
+
+启动前端：
 
 ```bash
 cd frontend
@@ -163,161 +403,103 @@ pnpm install
 pnpm run dev
 ```
 
-Vite 开发服务默认运行在：
+Vite 默认地址：
 
 ```text
-http://localhost:5173/
+http://localhost:5173
 ```
 
-开发环境会将 `/api` 代理到 Spring Boot：
+开发环境中 `/api` 会代理到：
 
 ```text
 http://localhost:8081
 ```
 
-构建：
+## Test
+
+后端测试：
+
+```bash
+mvn test
+```
+
+前端类型检查与构建：
 
 ```bash
 cd frontend
 pnpm run build
 ```
 
-旧版 Spring Boot 静态联调页仍可作为轻量调试入口保留：
-
-```text
-http://localhost:8081/app/index.html
-```
-
-秒杀预热示例：
-
-```http
-POST /api/v1/flash-sale-vouchers/1001/warmup
-```
-
-秒杀下单示例：
-
-```http
-POST /api/v1/flash-sale-vouchers/1001/orders
-Authorization: Bearer {token}
-```
-
-成功响应：
-
-```json
-{
-  "success": true,
-  "code": "OK",
-  "message": null,
-  "data": "LSO202605210000000001"
-}
-```
-
-## 本地运行
-
-公开配置文件 `src/main/resources/application.yaml` 只保留默认值和环境变量占位，不写入本机密码。
-
-本地私有配置使用 `src/main/resources/application-local.yaml`，该文件已被 Git 忽略。
-
-示例：
-
-```yaml
-spring:
-  datasource:
-    url: jdbc:mysql://192.168.150.101:3306/life_service
-    username: root
-    password: root
-  data:
-    redis:
-      host: 192.168.150.101
-      port: 6379
-      password:
-
-rocketmq:
-  name-server: 192.168.150.101:9876
-```
-
-启动：
-
-```bash
-mvn spring-boot:run
-```
-
-如果使用环境变量：
-
-```bash
-MYSQL_HOST=192.168.150.101 \
-MYSQL_PORT=3306 \
-MYSQL_DATABASE=life_service \
-MYSQL_USERNAME=root \
-MYSQL_PASSWORD=root \
-REDIS_HOST=192.168.150.101 \
-ROCKETMQ_NAME_SERVER=192.168.150.101:9876 \
-mvn spring-boot:run
-```
-
-启动秒杀券自动预热默认开启。脚手架阶段没有管理端时，应用启动会把未结束、状态为未开始或进行中的秒杀券写入 Redis 热数据；后续有优惠券发布流程后，可以关闭该行为：
-
-```bash
-FLASH_SALE_STARTUP_WARMUP_ENABLED=false mvn spring-boot:run
-```
-
-## 测试
-
-运行单元测试：
-
-```bash
-mvn test
-```
-
 当前测试覆盖：
 
 - 缓存客户端
+- 缓存删除补偿
 - Redis 订单号生成
 - 商户查询缓存
-- 秒杀 Lua 资格判断链路
-- MQ 消息发布与消费
+- 秒杀 Lua 资格判断
+- MQ 发布与消费
+- 启动预热
 - 超时关单
 - 库存释放补偿
-- 支付和关单并发状态判断
-- 滑动窗口限流注解、Key 解析和 Redis Lua 客户端
-- 启动时秒杀券自动预热
+- 支付和关单并发
+- 滑动窗口限流
+- 登录鉴权
+- 请求 trace 日志
 
-## 项目结构
-
-```text
-src/main/java/io/github/ikemoon/lifeservice
-  common          通用响应、异常、配置
-  infrastructure  缓存、ID 等基础设施
-  merchant        商户查询
-  voucher         优惠券与秒杀券
-  order           优惠券订单、秒杀下单、关单、支付状态
-```
-
-订单模块当前按职责拆分：
+## Project Structure
 
 ```text
-order
-  controller
-  entity
-  enums
-  mapper
-  messaging
-  service
-    impl
-    close
-    payment
-    stock
+.
+├── frontend/                 # Vue 3 PC frontend
+├── src/main/java/io/github/ikemoon/lifeservice
+│   ├── common                # API response, exception, logging, auth
+│   ├── infrastructure        # cache, id, rate limit
+│   ├── merchant              # merchant query
+│   ├── voucher               # voucher and flash-sale warmup
+│   ├── order                 # flash-sale order, close, payment, stock release
+│   └── user                  # email login and token auth
+├── src/main/resources/db     # Flyway migrations and demo data
+├── deploy/                   # development and production compose templates
+├── compose.yaml              # full local demo stack
+├── Dockerfile                # backend image
+└── DEPLOYMENT.md             # deployment guide
 ```
 
-## 当前边界
+## CI/CD
 
-当前版本已经完成中小规模秒杀入口的核心闭环，但仍不包含：
+GitHub Actions currently checks:
 
-- 真实支付网关接入
-- 支付流水表和退款单
-- 退款补偿任务
-- 多实例下的完整运维监控
-- Prometheus / Grafana 指标看板
-- 网关限流和风控
+- Maven test
+- Frontend build
+- Docker image build
+- Docker Compose config validation
 
-这些能力会在后续 V2/V3 版本继续演进。
+The repository also includes a Docker publish workflow for GHCR images:
+
+- `ghcr.io/1ike-m0on/life-service-backend`
+- `ghcr.io/1ike-m0on/life-service-frontend`
+
+## Roadmap
+
+- Real payment gateway integration
+- Payment transaction table and refund order
+- Refund compensation workflow
+- Admin-side merchant and voucher management
+- MQ-based close/payment compensation
+- Prometheus and Grafana monitoring
+- Multi-instance deployment verification
+- Gateway-level rate limiting and risk control
+
+## Scope
+
+This project is a local-life service scaffold for learning, demonstration, and continued development. It is not a production-ready high-availability commercial system yet.
+
+The current version is suitable for demonstrating:
+
+- full-stack local-life product prototype
+- Redis cache and consistency patterns
+- Redis Lua flash-sale qualification
+- RocketMQ asynchronous order creation
+- unpaid order auto-close
+- payment/close concurrency handling
+- Docker Compose one-command startup

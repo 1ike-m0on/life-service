@@ -58,6 +58,16 @@ rocketmq:
     group: ${ROCKETMQ_PRODUCER_GROUP:life-service-producer}
     send-message-timeout: ${ROCKETMQ_SEND_TIMEOUT_MS:3000}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
 life-service:
   auth:
     token-prefix: ${AUTH_TOKEN_PREFIX:life:auth:token:}

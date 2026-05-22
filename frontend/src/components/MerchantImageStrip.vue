@@ -5,6 +5,7 @@
       :key="`${image}-${index}`"
       :src="image"
       :alt="`${alt} ${index + 1}`"
+      @error="useFallbackImage($event, index)"
     />
   </div>
 </template>
@@ -18,15 +19,25 @@ const props = defineProps<{
 }>();
 
 const fallbackImages = [
-  'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=920&q=80',
-  'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=920&q=80',
-  'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=920&q=80',
+  '/assets/merchant-coffee.svg',
+  '/assets/merchant-hotpot.svg',
+  '/assets/merchant-bakery.svg',
+  '/assets/merchant-sushi.svg',
 ];
 
 const images = computed(() => {
   const parsed = props.src?.split(',').map((item) => item.trim()).filter(Boolean) || [];
   return parsed.length > 0 ? parsed.slice(0, 5) : fallbackImages;
 });
+
+function useFallbackImage(event: Event, index: number) {
+  const image = event.target as HTMLImageElement;
+  const fallbackImage = fallbackImages[index % fallbackImages.length];
+  if (image.src.endsWith(fallbackImage)) {
+    return;
+  }
+  image.src = fallbackImage;
+}
 </script>
 
 <style scoped>

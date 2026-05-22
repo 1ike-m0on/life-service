@@ -1,0 +1,158 @@
+name: life-service-prod
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-life_service}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-256M}
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-120}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      life-service-net:
+
+  redis:
+    image: redis:7.2
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    command: >
+      sh -c 'redis-server --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-256mb}
+      --maxmemory-policy noeviction
+      --requirepass "$$REDIS_PASSWORD"'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      life-service-net:
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:${ROCKETMQ_VERSION:-5.5.0}
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      JAVA_OPT_EXT: "${ROCKETMQ_NAMESRV_JAVA_OPT_EXT:--server -Xms256m -Xmx256m -Xmn128m}"
+    command: sh mqnamesrv
+    volumes:
+      - rocketmq_namesrv_logs:/home/rocketmq/logs
+    networks:
+      life-service-net:
+        ipv4_address: 172.29.0.11
+
+  rocketmq-broker:
+    image: apache/rocketmq:${ROCKETMQ_VERSION:-5.5.0}
+    restart: unless-stopped
+    user: root
+    depends_on:
+      - rocketmq-namesrv
+    environment:
+      TZ: Asia/Shanghai
+      NAMESRV_ADDR: rocketmq-namesrv:9876
+      JAVA_OPT_EXT: "${ROCKETMQ_BROKER_JAVA_OPT_EXT:--server -Xms768m -Xmx768m -Xmn384m}"
+    command: |
+      sh -c "cat > /home/rocketmq/broker.conf <<EOF
+      brokerClusterName=DefaultCluster
+      brokerName=broker-a
+      brokerId=0
+      brokerIP1=172.29.0.12
+      namesrvAddr=rocketmq-namesrv:9876
+      deleteWhen=04
+      fileReservedTime=48
+      brokerRole=ASYNC_MASTER
+      flushDiskType=ASYNC_FLUSH
+      autoCreateTopicEnable=true
+      autoCreateSubscriptionGroup=true
+      listenPort=10911
+      storePathRootDir=/home/rocketmq/store
+      storePathCommitLog=/home/rocketmq/store/commitlog
+      EOF
+      sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/broker.conf"
+    volumes:
+      - rocketmq_broker_logs:/home/rocketmq/logs
+      - rocketmq_broker_store:/home/rocketmq/store
+    networks:
+      life-service-net:
+        ipv4_address: 172.29.0.12
+
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/1ike-m0on/life-service-backend:latest}
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rocketmq-broker:
+        condition: service_started
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-demo}
+      SERVER_PORT: 8081
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-life_service}
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+      ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
+      ORDER_MESSAGE_PROVIDER: rocketmq
+      FLASH_SALE_STARTUP_WARMUP_ENABLED: ${FLASH_SALE_STARTUP_WARMUP_ENABLED:-true}
+      FLASH_SALE_STARTUP_WARMUP_FAIL_FAST: ${FLASH_SALE_STARTUP_WARMUP_FAIL_FAST:-false}
+      FLASH_SALE_STARTUP_WARMUP_MAX_VOUCHERS: ${FLASH_SALE_STARTUP_WARMUP_MAX_VOUCHERS:-200}
+    ports:
+      - "${BACKEND_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/actuator/health | grep -q 'UP'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    networks:
+      life-service-net:
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/1ike-m0on/life-service-frontend:latest}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    networks:
+      life-service-net:
+
+networks:
+  life-service-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16
+
+volumes:
+  mysql_data:
+  redis_data:
+  rocketmq_namesrv_logs:
+  rocketmq_broker_logs:
+  rocketmq_broker_store:

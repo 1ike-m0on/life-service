@@ -1,0 +1,11 @@
+spring:
+  flyway:
+    locations:
+      - classpath:db/migration
+
+life-service:
+  flash-sale:
+    warmup:
+      enabled: ${FLASH_SALE_STARTUP_WARMUP_ENABLED:true}
+      fail-fast: ${FLASH_SALE_STARTUP_WARMUP_FAIL_FAST:false}
+      max-vouchers: ${FLASH_SALE_STARTUP_WARMUP_MAX_VOUCHERS:200}

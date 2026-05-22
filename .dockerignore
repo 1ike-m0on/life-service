@@ -1,0 +1,13 @@
+.git
+.github
+.idea
+.m2
+target
+docs
+frontend
+deploy/.env
+deploy/.env.*
+src/main/resources/application-local.yaml
+*.iml
+*.iws
+*.ipr
