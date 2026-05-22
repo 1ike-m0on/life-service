@@ -104,6 +104,44 @@ class TwoLevelCacheClientTest {
     }
 
     @Test
+    void queryListReturnsEmptyValueWhenRedisNullSentinelHit() {
+        when(localCacheService.<List<MerchantCategory>>get(CACHE_KEY)).thenReturn(null);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(CACHE_KEY)).thenReturn("");
+        AtomicBoolean fallbackCalled = new AtomicBoolean(false);
+
+        List<MerchantCategory> result = cacheClient.queryList(
+                CACHE_KEY,
+                MerchantCategory.class,
+                () -> {
+                    fallbackCalled.set(true);
+                    return List.of(category(1L, "Food"));
+                },
+                REDIS_TTL);
+
+        assertThat(result).isEmpty();
+        assertThat(fallbackCalled).isFalse();
+        verify(localCacheService).put(CACHE_KEY, List.of());
+    }
+
+    @Test
+    void queryListWritesEmptyListWhenDatabaseReturnsNull() {
+        when(localCacheService.<List<MerchantCategory>>get(CACHE_KEY)).thenReturn(null);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(CACHE_KEY)).thenReturn(null);
+
+        List<MerchantCategory> result = cacheClient.queryList(
+                CACHE_KEY,
+                MerchantCategory.class,
+                () -> null,
+                REDIS_TTL);
+
+        assertThat(result).isEmpty();
+        verify(valueOperations).set(CACHE_KEY, "[]", REDIS_TTL);
+        verify(localCacheService).put(CACHE_KEY, List.of());
+    }
+
+    @Test
     void invalidateDeletesLocalAndRedisCache() {
         cacheClient.invalidate(CACHE_KEY);
 
