@@ -1,4 +1,17 @@
-# Local Development Services
+# Deployment Files
+
+For a full one-command demo stack, prefer the root `compose.yaml`:
+
+```powershell
+docker compose up -d --build
+```
+
+That command starts MySQL, Redis, RocketMQ, the Spring Boot backend, and the Vue
+frontend. See `DEPLOYMENT.md` for the full deployment guide.
+
+This folder keeps development and production deployment templates.
+
+## Local Development Services
 
 This compose file starts the local middleware used by life-service:
 
@@ -39,6 +52,23 @@ Remove local volumes when you want to reset all middleware data:
 docker compose --env-file deploy/.env -f deploy/docker-compose.dev.yml down -v
 ```
 
+## Production Template
+
+`deploy/docker-compose.prod.yml` is a single-host template that pulls published
+images instead of building local source.
+
+Copy the example production environment file:
+
+```powershell
+Copy-Item deploy/.env.prod.example deploy/.env.prod
+```
+
+Edit secrets and image tags in `deploy/.env.prod`, then start:
+
+```powershell
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
+```
+
 ## Application Environment
 
 When Spring Boot runs on the host machine, keep these values aligned with
@@ -47,7 +77,7 @@ When Spring Boot runs on the host machine, keep these values aligned with
 
 ```text
 MYSQL_HOST=localhost
-MYSQL_PORT=3306
+MYSQL_PORT=3307
 MYSQL_DATABASE=life_service
 MYSQL_USERNAME=root
 MYSQL_PASSWORD=root

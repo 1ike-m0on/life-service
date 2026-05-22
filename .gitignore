@@ -11,6 +11,7 @@ src/main/resources/application-local.yaml
 deploy/.env
 deploy/.env.*
 !deploy/.env.example
+!deploy/.env.prod.example
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

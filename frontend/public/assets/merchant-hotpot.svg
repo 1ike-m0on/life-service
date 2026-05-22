@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640" role="img" aria-label="Hotpot table">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff5ee"/>
+      <stop offset="0.48" stop-color="#ffd3c1"/>
+      <stop offset="1" stop-color="#c63f2f"/>
+    </linearGradient>
+    <radialGradient id="soup" cx="52%" cy="45%" r="54%">
+      <stop offset="0" stop-color="#ffb66f"/>
+      <stop offset="0.55" stop-color="#ff6633"/>
+      <stop offset="1" stop-color="#9f271e"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#5b1d18" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+  <rect width="960" height="640" fill="url(#bg)"/>
+  <circle cx="120" cy="130" r="92" fill="#ffffff" opacity="0.3"/>
+  <circle cx="812" cy="118" r="122" fill="#ffb793" opacity="0.35"/>
+  <g filter="url(#shadow)">
+    <ellipse cx="480" cy="372" rx="286" ry="150" fill="#4c2421"/>
+    <ellipse cx="480" cy="342" rx="250" ry="130" fill="#fff5ef"/>
+    <ellipse cx="480" cy="342" rx="210" ry="104" fill="url(#soup)"/>
+    <path d="M480 240v204" stroke="#fff5ef" stroke-width="18" stroke-linecap="round"/>
+    <path d="M332 324c54-48 116-36 160-5 50 35 96 34 140-10" fill="none" stroke="#ffe4cc" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="386" cy="356" r="18" fill="#ffe1ba"/>
+    <circle cx="568" cy="312" r="16" fill="#ffe1ba"/>
+    <circle cx="618" cy="374" r="20" fill="#ffdda4"/>
+  </g>
+  <g opacity="0.78" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round">
+    <path d="M346 188c-30-26-20-62 20-82"/>
+    <path d="M486 182c-32-28-24-66 18-88"/>
+    <path d="M616 196c-34-28-22-64 20-88"/>
+  </g>
+</svg>

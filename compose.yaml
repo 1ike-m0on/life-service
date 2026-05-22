@@ -1,4 +1,4 @@
-name: life-service-dev
+name: life-service
 
 services:
   mysql:
@@ -10,8 +10,7 @@ services:
     cpus: ${MYSQL_CPUS:-1.0}
     environment:
       TZ: Asia/Shanghai
-      MYSQL_ALLOW_EMPTY_PASSWORD: ${MYSQL_ALLOW_EMPTY_PASSWORD:-yes}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-life_service}
     ports:
       - "${MYSQL_PORT:-3307}:3306"
@@ -25,13 +24,13 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "if [ -n \"$${MYSQL_ROOT_PASSWORD}\" ]; then mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent; else mysqladmin ping -h 127.0.0.1 -uroot --silent; fi"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
     networks:
-      - backend
+      life-service-net:
 
   redis:
     image: redis:7.2
@@ -42,23 +41,21 @@ services:
     cpus: ${REDIS_CPUS:-0.5}
     environment:
       TZ: Asia/Shanghai
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:
       - "${REDIS_PORT:-6379}:6379"
     command: >
-      sh -c 'if [ -n "$$REDIS_PASSWORD" ];
-      then redis-server --appendonly yes --maxmemory ${REDIS_MAXMEMORY:-128mb} --maxmemory-policy noeviction --requirepass "$$REDIS_PASSWORD";
-      else redis-server --appendonly yes --maxmemory ${REDIS_MAXMEMORY:-128mb} --maxmemory-policy noeviction;
-      fi'
+      redis-server --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-128mb}
+      --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "if [ -n \"$${REDIS_PASSWORD}\" ]; then redis-cli -a \"$${REDIS_PASSWORD}\" ping; else redis-cli ping; fi"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 10
     networks:
-      - backend
+      life-service-net:
 
   rocketmq-namesrv:
     image: apache/rocketmq:${ROCKETMQ_VERSION:-5.5.0}
@@ -76,7 +73,8 @@ services:
     volumes:
       - rocketmq_namesrv_logs:/home/rocketmq/logs
     networks:
-      - backend
+      life-service-net:
+        ipv4_address: 172.28.0.11
 
   rocketmq-broker:
     image: apache/rocketmq:${ROCKETMQ_VERSION:-5.5.0}
@@ -101,7 +99,7 @@ services:
       brokerClusterName=DefaultCluster
       brokerName=broker-a
       brokerId=0
-      brokerIP1=${ROCKETMQ_BROKER_IP:?set ROCKETMQ_BROKER_IP in deploy/.env}
+      brokerIP1=172.28.0.12
       namesrvAddr=rocketmq-namesrv:9876
       deleteWhen=04
       fileReservedTime=48
@@ -118,7 +116,76 @@ services:
       - rocketmq_broker_logs:/home/rocketmq/logs
       - rocketmq_broker_store:/home/rocketmq/store
     networks:
-      - backend
+      life-service-net:
+        ipv4_address: 172.28.0.12
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: life-service-backend:local
+    container_name: life-service-backend
+    restart: unless-stopped
+    mem_limit: ${BACKEND_MEM_LIMIT:-768m}
+    memswap_limit: ${BACKEND_MEMSWAP_LIMIT:-768m}
+    cpus: ${BACKEND_CPUS:-1.0}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rocketmq-broker:
+        condition: service_started
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-demo}
+      SERVER_PORT: 8081
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-life_service}
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_POOL_MAX_SIZE: ${MYSQL_POOL_MAX_SIZE:-16}
+      MYSQL_POOL_MIN_IDLE: ${MYSQL_POOL_MIN_IDLE:-4}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_POOL_MAX_ACTIVE: ${REDIS_POOL_MAX_ACTIVE:-64}
+      REDIS_POOL_MAX_IDLE: ${REDIS_POOL_MAX_IDLE:-16}
+      REDIS_POOL_MIN_IDLE: ${REDIS_POOL_MIN_IDLE:-4}
+      ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
+      ORDER_MESSAGE_PROVIDER: rocketmq
+      FLASH_SALE_STARTUP_WARMUP_ENABLED: ${FLASH_SALE_STARTUP_WARMUP_ENABLED:-true}
+      FLASH_SALE_STARTUP_WARMUP_FAIL_FAST: ${FLASH_SALE_STARTUP_WARMUP_FAIL_FAST:-false}
+      FLASH_SALE_STARTUP_WARMUP_MAX_VOUCHERS: ${FLASH_SALE_STARTUP_WARMUP_MAX_VOUCHERS:-200}
+    ports:
+      - "${BACKEND_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/actuator/health | grep -q 'UP'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    networks:
+      life-service-net:
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: life-service-frontend:local
+    container_name: life-service-frontend
+    restart: unless-stopped
+    mem_limit: ${FRONTEND_MEM_LIMIT:-128m}
+    memswap_limit: ${FRONTEND_MEMSWAP_LIMIT:-128m}
+    cpus: ${FRONTEND_CPUS:-0.25}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    networks:
+      life-service-net:
 
   rocketmq-dashboard:
     image: apacherocketmq/rocketmq-dashboard:latest
@@ -138,11 +205,14 @@ services:
     ports:
       - "${ROCKETMQ_DASHBOARD_PORT:-18082}:8082"
     networks:
-      - backend
+      life-service-net:
 
 networks:
-  backend:
+  life-service-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   mysql_data:
