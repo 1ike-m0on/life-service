@@ -10,6 +10,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,6 +27,97 @@ jobs:
 
       - name: Test and coverage
         run: mvn verify
+
+      - name: Generate JaCoCo summary
+        if: always()
+        run: |
+          python3 <<'PY'
+          import os
+          from textwrap import dedent
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("target/site/jacoco/jacoco.xml")
+
+          if not report.exists():
+              body = dedent("""\
+              ## JaCoCo Coverage
+
+              JaCoCo report was not generated.
+              """)
+          else:
+              root = ET.parse(report).getroot()
+
+              def coverage(counter_type):
+                  counter = root.find(f"./counter[@type='{counter_type}']")
+                  missed = int(counter.attrib["missed"])
+                  covered = int(counter.attrib["covered"])
+                  total = missed + covered
+                  percent = 0 if total == 0 else covered * 100 / total
+                  return missed, covered, percent
+
+              instruction_missed, instruction_covered, instruction_percent = coverage("INSTRUCTION")
+              branch_missed, branch_covered, branch_percent = coverage("BRANCH")
+              line_missed, line_covered, line_percent = coverage("LINE")
+
+              body = dedent(f"""\
+              ## JaCoCo Coverage
+
+              | Metric | Coverage | Covered | Missed |
+              | --- | ---: | ---: | ---: |
+              | Instruction | {instruction_percent:.1f}% | {instruction_covered} | {instruction_missed} |
+              | Branch | {branch_percent:.1f}% | {branch_covered} | {branch_missed} |
+              | Line | {line_percent:.1f}% | {line_covered} | {line_missed} |
+
+              Full HTML report is available in the `jacoco-report` workflow artifact.
+              """)
+
+          Path("coverage-summary.md").write_text(body, encoding="utf-8")
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(body)
+          PY
+
+      - name: Comment JaCoCo summary on PR
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const marker = '<!-- life-service-coverage -->';
+            const summary = fs.readFileSync('coverage-summary.md', 'utf8');
+            const body = `${marker}\n${summary}`;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(comment =>
+              comment.user.type === 'Bot' && comment.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
 
       - name: Upload JaCoCo report
         if: always()
