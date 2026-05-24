@@ -35,8 +35,9 @@ check order status, and try the payment/close flow from a PC-friendly frontend.
 - Unpaid order auto-close and stock release retry
 - Simulated payment callback with paid/closed state handling
 - Sliding-window rate limiting based on Redis ZSet + Lua
-- Request trace logging and Actuator health check
+- Request trace logging, Actuator health, and Prometheus metrics endpoint
 - One-command Docker Compose startup for frontend, backend, and middleware
+- Optional Prometheus and Grafana monitoring profile
 
 ## Architecture At A Glance
 
@@ -56,7 +57,7 @@ flowchart LR
 More details:
 
 - [Architecture notes](ARCHITECTURE.md)
-- [Benchmark summary](BENCHMARK.md)
+- [Benchmark summary](BENCHMARK.md), including ★ V2.1 monitored tuning results
 - [Deployment guide](DEPLOYMENT.md)
 
 ## Tech Stack
@@ -89,6 +90,7 @@ Open:
 | --- | --- |
 | Frontend | http://localhost:8080 |
 | Backend health | http://localhost:8081/actuator/health |
+| Backend metrics | http://localhost:8081/actuator/prometheus |
 | MySQL | localhost:3307 |
 | Redis | localhost:6379 |
 | RocketMQ NameServer | localhost:9876 |
@@ -104,6 +106,38 @@ Reset local data:
 ```bash
 docker compose down -v
 ```
+
+Optional monitoring stack:
+
+```bash
+docker compose --profile monitor up -d
+```
+
+| Service | URL |
+| --- | --- |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000 |
+
+Default Grafana login is `admin` / `admin` for local demo use.
+Grafana auto-loads the `Life Service Overview` dashboard from the repository.
+
+Useful Prometheus metric names for the current demo:
+
+```text
+life_flash_sale_request_total
+life_flash_sale_success_total
+life_flash_sale_stock_not_enough_total
+life_flash_sale_duplicate_total
+life_flash_sale_not_ready_total
+life_cache_delete_task_pending
+life_order_close_success_total
+life_stock_release_failure_total
+life_rate_limit_rejected_total
+```
+
+Reusable local load-test assets are available under `tests/load/jmeter`. They
+include a parameterized JMeter plan, token CSV preparation scripts, and reset SQL
+for repeatable flash-sale benchmark runs.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for ports, resource limits, optional
 RocketMQ dashboard, development middleware mode, and published image mode.
@@ -163,7 +197,7 @@ ready, and rate limiting is returned as normal product feedback in the UI.
 - Payment transaction and refund records
 - MQ-based close/payment compensation
 - Admin-side merchant and voucher management
-- Prometheus/Grafana monitoring
+- Grafana dashboards and alert rules
 - Multi-instance deployment verification
 - Gateway-level traffic protection and risk control
 

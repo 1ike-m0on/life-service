@@ -9,6 +9,21 @@ docker compose up -d --build
 That command starts MySQL, Redis, RocketMQ, the Spring Boot backend, and the Vue
 frontend. See `DEPLOYMENT.md` for the full deployment guide.
 
+Optional monitoring for the root compose stack:
+
+```powershell
+docker compose --profile monitor up -d
+```
+
+This starts Prometheus at `http://localhost:9090` and Grafana at
+`http://localhost:3000`.
+Grafana auto-loads the `Life Service Overview` dashboard from
+`deploy/monitoring/grafana/dashboards`.
+
+Search `life_flash_sale_*`, `life_cache_delete_*`, `life_order_close_*`,
+`life_stock_release_*`, and `life_rate_limit_*` in Prometheus to inspect the
+application business metrics.
+
 This folder keeps development and production deployment templates.
 
 ## Local Development Services

@@ -84,3 +84,68 @@ pressure-client queuing.
 Future versions should add monitoring for core endpoint latency, P95/P99,
 business feedback rate, and MQ backlog, then tighten rate limiting when the
 core experience starts to degrade.
+
+## V2.1 Observability Tuning
+
+After Prometheus/Grafana monitoring and request-stage timing were added, the
+flash-sale path was measured again in the same local Docker benchmark style.
+This comparison uses the real RocketMQ publisher, not the diagnostic dry-run
+publisher.
+
+Common scenario:
+
+```text
+successful flash-sale order path
+total requests: 12000
+users: 12000 unique users
+stock: 12000
+threads: 200
+ramp-up: 10s
+loop count: 60
+HTTP error expectation: 0%
+```
+
+Compared versions:
+
+- Initial monitored run: first real RocketMQ run after the monitoring stack was added.
+- Latest tuned run: real RocketMQ run after connection-pool tuning, order-close
+  isolation during load testing, and rate-limit configuration tuning.
+
+| Metric | Initial monitored run | Latest tuned run | Change |
+| --- | ---: | ---: | ---: |
+| Samples | 12000 | 12000 | - |
+| Average latency | 391 ms | 271 ms | -30.7% |
+| Median latency | 309 ms | 215 ms | -30.4% |
+| P90 | 700 ms | 494 ms | -29.4% |
+| P95 | 804 ms | 592 ms | -26.4% |
+| P99 | 1098 ms | 698 ms | -36.4% |
+| Min | 5 ms | 4 ms | - |
+| Max | 1409 ms | 799 ms | -43.3% |
+| Throughput | 389.9 req/s | 525.4 req/s | +34.8% |
+| HTTP error rate | 0.00% | 0.00% | stable |
+
+Star summary:
+
+```text
+★ Average response improved from 391ms to 271ms.
+★ P99 improved from 1098ms to 698ms.
+★ Throughput improved from 389.9 req/s to 525.4 req/s.
+★ HTTP error rate stayed at 0.00%.
+★ The latest result still includes real RocketMQ send acknowledgement.
+★ The number does not include waiting for asynchronous consumer persistence.
+```
+
+What changed:
+
+- Monitoring became visible through Actuator, Prometheus, and Grafana.
+- Request-stage timing made auth, rate-limit, Redis Lua, order-id generation,
+  and MQ publishing costs easier to separate.
+- MySQL and Redis pool sizes became configurable for local load testing.
+- Auto-close jobs can be disabled during flash-sale entrance benchmarks to
+  avoid mixing background order-close work into the measurement.
+- Rate-limit behavior became configurable so local one-machine tests do not
+  accidentally benchmark IP/global throttling instead of the flash-sale path.
+
+The result should be read as a local engineering comparison. It is useful for
+showing optimization direction and bottleneck discovery, but it is not a
+production capacity guarantee.

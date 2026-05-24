@@ -18,6 +18,7 @@ Open:
 
 - Frontend: http://localhost:8080
 - Backend health: http://localhost:8081/actuator/health
+- Backend Prometheus metrics: http://localhost:8081/actuator/prometheus
 
 Stop the stack:
 
@@ -52,10 +53,11 @@ so the browser only needs to visit `http://localhost:8080`.
 | Frontend | http://localhost:8080 |
 | Backend | http://localhost:8081 |
 | Backend health | http://localhost:8081/actuator/health |
+| Backend metrics | http://localhost:8081/actuator/prometheus |
 | MySQL | localhost:3307 |
 | Redis | localhost:6379 |
 | RocketMQ NameServer | localhost:9876 |
-| RocketMQ Broker | localhost:10909 / 10911 / 10912 |
+| RocketMQ Broker | Docker network only |
 
 RocketMQ Dashboard is optional:
 
@@ -66,6 +68,53 @@ docker compose --profile dashboard up -d --build
 Dashboard URL:
 
 - http://localhost:18082
+
+Monitoring is optional:
+
+```bash
+docker compose --profile monitor up -d
+```
+
+Monitoring URLs:
+
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000
+
+Grafana automatically provisions the `Life Service Overview` dashboard.
+
+Default Grafana login for the local demo is:
+
+```text
+admin / admin
+```
+
+Prometheus scrapes the backend inside the Docker Compose network through:
+
+```text
+backend:8081/actuator/prometheus
+```
+
+Key application metrics:
+
+| Metric | Meaning |
+| --- | --- |
+| `life_flash_sale_request_total` | Flash-sale order endpoint requests |
+| `life_flash_sale_success_total` | Flash-sale qualifications accepted |
+| `life_flash_sale_stock_not_enough_total` | Flash-sale requests rejected because stock is exhausted |
+| `life_flash_sale_duplicate_total` | Flash-sale requests rejected by one-user-one-order rule |
+| `life_flash_sale_not_ready_total` | Flash-sale requests rejected because hot Redis data is missing |
+| `life_flash_sale_mq_publish_failure_total` | MQ publish failures after Redis qualification |
+| `life_flash_sale_redis_rollback_failure_total` | Redis qualification rollback failures |
+| `life_cache_delete_failure_total` | Redis cache delete failures that created retry tasks |
+| `life_cache_delete_task_pending` | Pending cache delete retry tasks |
+| `life_cache_delete_task_failed_total` | Cache delete retry tasks that reached the retry limit |
+| `life_order_close_success_total` | Expired pending orders closed successfully |
+| `life_order_close_failure_total` | Expired order close failures |
+| `life_stock_release_failure_total` | Stock release failures during close compensation |
+| `life_stock_release_retry_total` | Stock release retries scheduled |
+| `life_payment_order_closed_total` | Payment callbacks rejected because close already won |
+| `life_rate_limit_allowed_total` | Requests accepted by the sliding-window limiter |
+| `life_rate_limit_rejected_total` | Requests rejected by the sliding-window limiter |
 
 ## Demo Data
 
@@ -105,8 +154,12 @@ The default compose file uses conservative resource limits for local machines:
 | RocketMQ Broker | 1024m, 1 CPU |
 | Backend | 768m, 1 CPU |
 | Frontend | 128m, 0.25 CPU |
+| Prometheus | 256m, 0.25 CPU |
+| Grafana | 256m, 0.25 CPU |
 
-On small Windows / WSL2 machines, do not start the dashboard profile first.
+On small Windows / WSL2 machines, do not start the dashboard or monitor profile
+first. Start the core stack first, then enable optional profiles only when
+needed.
 
 If Docker Desktop still consumes too much memory, cap WSL globally in
 `%UserProfile%\.wslconfig`:
