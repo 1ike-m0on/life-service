@@ -15,13 +15,14 @@ class RocketMqFlashSaleOrderMessagePublisherTest {
     @Test
     void publishSendsCommandToConfiguredTopic() {
         RocketMQTemplate rocketMQTemplate = mock(RocketMQTemplate.class);
+        SendResult sendResult = mock(SendResult.class);
+        when(sendResult.getSendStatus()).thenReturn(SendStatus.SEND_OK);
         FlashSaleOrderMessagingProperties properties = new FlashSaleOrderMessagingProperties();
         properties.setFlashSaleOrderTopic("life-service-flash-sale-order");
         RocketMqFlashSaleOrderMessagePublisher publisher =
                 new RocketMqFlashSaleOrderMessagePublisher(rocketMQTemplate, properties);
         FlashSaleOrderCommand command = new FlashSaleOrderCommand("LSO202605200000000001", 1L, 10L);
-        when(rocketMQTemplate.syncSend("life-service-flash-sale-order", command))
-                .thenReturn(sendResult(SendStatus.SEND_OK));
+        when(rocketMQTemplate.syncSend("life-service-flash-sale-order", command)).thenReturn(sendResult);
 
         publisher.publish(command);
 
@@ -29,23 +30,19 @@ class RocketMqFlashSaleOrderMessagePublisherTest {
     }
 
     @Test
-    void publishThrowsWhenRocketMqSendStatusIsNotOk() {
+    void publishThrowsWhenSendStatusIsNotOk() {
         RocketMQTemplate rocketMQTemplate = mock(RocketMQTemplate.class);
+        SendResult sendResult = mock(SendResult.class);
+        when(sendResult.getSendStatus()).thenReturn(SendStatus.FLUSH_DISK_TIMEOUT);
         FlashSaleOrderMessagingProperties properties = new FlashSaleOrderMessagingProperties();
         properties.setFlashSaleOrderTopic("life-service-flash-sale-order");
         RocketMqFlashSaleOrderMessagePublisher publisher =
                 new RocketMqFlashSaleOrderMessagePublisher(rocketMQTemplate, properties);
         FlashSaleOrderCommand command = new FlashSaleOrderCommand("LSO202605200000000001", 1L, 10L);
-        when(rocketMQTemplate.syncSend("life-service-flash-sale-order", command))
-                .thenReturn(sendResult(SendStatus.FLUSH_DISK_TIMEOUT));
+        when(rocketMQTemplate.syncSend("life-service-flash-sale-order", command)).thenReturn(sendResult);
 
         assertThatExceptionOfType(IllegalStateException.class)
-                .isThrownBy(() -> publisher.publish(command));
-    }
-
-    private static SendResult sendResult(SendStatus status) {
-        SendResult sendResult = new SendResult();
-        sendResult.setSendStatus(status);
-        return sendResult;
+                .isThrownBy(() -> publisher.publish(command))
+                .withMessage("RocketMQ send failed");
     }
 }

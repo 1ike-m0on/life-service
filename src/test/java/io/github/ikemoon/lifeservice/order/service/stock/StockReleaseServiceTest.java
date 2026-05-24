@@ -1,10 +1,12 @@
 package io.github.ikemoon.lifeservice.order.service.stock;
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import io.github.ikemoon.lifeservice.infrastructure.metrics.OrderMetrics;
 import io.github.ikemoon.lifeservice.order.service.close.OrderCloseProperties;
 import io.github.ikemoon.lifeservice.order.entity.StockReleaseTask;
 import io.github.ikemoon.lifeservice.order.enums.StockReleaseTaskStatus;
 import io.github.ikemoon.lifeservice.order.mapper.StockReleaseTaskMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +38,8 @@ class StockReleaseServiceTest {
     @Mock
     private StockReleaseTaskMapper stockReleaseTaskMapper;
 
+    private SimpleMeterRegistry meterRegistry;
+
     private StockReleaseService service;
 
     @BeforeEach
@@ -43,7 +47,13 @@ class StockReleaseServiceTest {
         OrderCloseProperties properties = new OrderCloseProperties();
         properties.setStockReleaseRetryDelay(Duration.ofMinutes(1));
         properties.setStockReleaseMaxRetryCount(3);
-        service = new StockReleaseService(redisTemplate, stockReleaseTxService, stockReleaseTaskMapper, properties);
+        meterRegistry = new SimpleMeterRegistry();
+        service = new StockReleaseService(
+                redisTemplate,
+                stockReleaseTxService,
+                stockReleaseTaskMapper,
+                properties,
+                new OrderMetrics(meterRegistry));
     }
 
     @Test
@@ -77,6 +87,8 @@ class StockReleaseServiceTest {
         assertThat(released).isFalse();
         verify(stockReleaseTxService, never()).releaseMysqlStockAndMarkSuccess(any(StockReleaseTask.class));
         verify(stockReleaseTaskMapper).update(any(), any(UpdateWrapper.class));
+        assertThat(counter("life.stock.release.failure")).isEqualTo(1);
+        assertThat(counter("life.stock.release.retry")).isEqualTo(1);
     }
 
     @Test
@@ -88,6 +100,8 @@ class StockReleaseServiceTest {
 
         assertThat(released).isFalse();
         verify(stockReleaseTaskMapper).update(any(), any(UpdateWrapper.class));
+        assertThat(counter("life.stock.release.failure")).isEqualTo(1);
+        assertThat(counter("life.stock.release.retry")).isZero();
     }
 
     private static StockReleaseTask task(int retryCount) {
@@ -100,5 +114,9 @@ class StockReleaseServiceTest {
         task.setStatus(StockReleaseTaskStatus.PENDING.code());
         task.setRetryCount(retryCount);
         return task;
+    }
+
+    private double counter(String name) {
+        return meterRegistry.counter(name).count();
     }
 }

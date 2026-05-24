@@ -1,12 +1,14 @@
 package io.github.ikemoon.lifeservice.order.service.close;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import io.github.ikemoon.lifeservice.infrastructure.metrics.OrderMetrics;
 import io.github.ikemoon.lifeservice.order.entity.StockReleaseTask;
 import io.github.ikemoon.lifeservice.order.entity.VoucherOrder;
 import io.github.ikemoon.lifeservice.order.enums.OrderStatus;
 import io.github.ikemoon.lifeservice.order.enums.StockReleaseTaskStatus;
 import io.github.ikemoon.lifeservice.order.mapper.VoucherOrderMapper;
 import io.github.ikemoon.lifeservice.order.service.stock.StockReleaseService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +36,8 @@ class VoucherOrderCloseServiceTest {
     @Mock
     private StockReleaseService stockReleaseService;
 
+    private SimpleMeterRegistry meterRegistry;
+
     private VoucherOrderCloseService service;
 
     @BeforeEach
@@ -41,7 +45,13 @@ class VoucherOrderCloseServiceTest {
         OrderCloseProperties properties = new OrderCloseProperties();
         properties.setPaymentTimeout(Duration.ofMinutes(15));
         properties.setBatchSize(100);
-        service = new VoucherOrderCloseService(voucherOrderMapper, closeTxService, stockReleaseService, properties);
+        meterRegistry = new SimpleMeterRegistry();
+        service = new VoucherOrderCloseService(
+                voucherOrderMapper,
+                closeTxService,
+                stockReleaseService,
+                properties,
+                new OrderMetrics(meterRegistry));
     }
 
     @Test
@@ -58,6 +68,7 @@ class VoucherOrderCloseServiceTest {
         assertThat(summary.closed()).isEqualTo(1);
         assertThat(summary.stockReleased()).isEqualTo(1);
         assertThat(summary.failed()).isZero();
+        assertThat(counter("life.order.close.success")).isEqualTo(1);
     }
 
     @Test
@@ -98,6 +109,8 @@ class VoucherOrderCloseServiceTest {
         assertThat(summary.closed()).isEqualTo(1);
         assertThat(summary.stockReleased()).isZero();
         assertThat(summary.failed()).isEqualTo(1);
+        assertThat(counter("life.order.close.success")).isEqualTo(1);
+        assertThat(counter("life.order.close.failure")).isZero();
     }
 
     @Test
@@ -118,6 +131,8 @@ class VoucherOrderCloseServiceTest {
         assertThat(summary.closed()).isEqualTo(1);
         assertThat(summary.stockReleased()).isEqualTo(1);
         assertThat(summary.failed()).isEqualTo(1);
+        assertThat(counter("life.order.close.success")).isEqualTo(1);
+        assertThat(counter("life.order.close.failure")).isEqualTo(1);
     }
 
     private static VoucherOrder order() {
@@ -138,5 +153,9 @@ class VoucherOrderCloseServiceTest {
         task.setVoucherId(1L);
         task.setStatus(StockReleaseTaskStatus.PENDING.code());
         return task;
+    }
+
+    private double counter(String name) {
+        return meterRegistry.counter(name).count();
     }
 }

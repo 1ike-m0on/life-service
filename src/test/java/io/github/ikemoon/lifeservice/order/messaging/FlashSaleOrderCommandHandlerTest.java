@@ -7,7 +7,6 @@ import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
 import io.github.ikemoon.lifeservice.order.entity.VoucherOrder;
 import io.github.ikemoon.lifeservice.order.enums.OrderStatus;
 import io.github.ikemoon.lifeservice.order.mapper.VoucherOrderMapper;
-import io.github.ikemoon.lifeservice.voucher.entity.FlashSaleVoucher;
 import io.github.ikemoon.lifeservice.voucher.entity.Voucher;
 import io.github.ikemoon.lifeservice.voucher.mapper.FlashSaleVoucherMapper;
 import io.github.ikemoon.lifeservice.voucher.mapper.VoucherMapper;

@@ -3,9 +3,11 @@ package io.github.ikemoon.lifeservice.order.service.payment;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
+import io.github.ikemoon.lifeservice.infrastructure.metrics.OrderMetrics;
 import io.github.ikemoon.lifeservice.order.entity.VoucherOrder;
 import io.github.ikemoon.lifeservice.order.enums.OrderStatus;
 import io.github.ikemoon.lifeservice.order.mapper.VoucherOrderMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,11 +27,14 @@ class VoucherOrderPaymentServiceTest {
     @Mock
     private VoucherOrderMapper voucherOrderMapper;
 
+    private SimpleMeterRegistry meterRegistry;
+
     private VoucherOrderPaymentService paymentService;
 
     @BeforeEach
     void setUp() {
-        paymentService = new VoucherOrderPaymentService(voucherOrderMapper);
+        meterRegistry = new SimpleMeterRegistry();
+        paymentService = new VoucherOrderPaymentService(voucherOrderMapper, new OrderMetrics(meterRegistry));
     }
 
     @Test
@@ -67,6 +72,7 @@ class VoucherOrderPaymentServiceTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.code()).isEqualTo(ErrorCode.ORDER_CLOSED);
+        assertThat(counter("life.payment.order.closed")).isEqualTo(1);
     }
 
     @Test
@@ -95,5 +101,9 @@ class VoucherOrderPaymentServiceTest {
         order.setUserId(10L);
         order.setStatus(status.code());
         return order;
+    }
+
+    private double counter(String name) {
+        return meterRegistry.counter(name).count();
     }
 }
