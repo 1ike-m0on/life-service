@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import io.github.ikemoon.lifeservice.common.exception.BusinessException;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
-import io.github.ikemoon.lifeservice.infrastructure.cache.CacheClient;
 import io.github.ikemoon.lifeservice.infrastructure.cache.CacheConstants;
 import io.github.ikemoon.lifeservice.order.entity.VoucherOrder;
 import io.github.ikemoon.lifeservice.order.mapper.VoucherOrderMapper;
@@ -16,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -23,12 +23,12 @@ import org.springframework.data.redis.core.ValueOperations;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -44,10 +44,10 @@ class FlashSaleVoucherWarmupServiceTest {
     private VoucherOrderMapper voucherOrderMapper;
 
     @Mock
-    private CacheClient cacheClient;
+    private StringRedisTemplate redisTemplate;
 
     @Mock
-    private StringRedisTemplate redisTemplate;
+    private HashOperations<String, Object, Object> hashOperations;
 
     @Mock
     private ValueOperations<String, String> valueOperations;
@@ -62,7 +62,6 @@ class FlashSaleVoucherWarmupServiceTest {
         service = new FlashSaleVoucherWarmupService(
                 flashSaleVoucherMapper,
                 voucherOrderMapper,
-                cacheClient,
                 redisTemplate);
     }
 
@@ -73,16 +72,23 @@ class FlashSaleVoucherWarmupServiceTest {
         when(voucherOrderMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of(
                 voucherOrder(2001L),
                 voucherOrder(2002L)));
+        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(redisTemplate.opsForSet()).thenReturn(setOperations);
 
         FlashSaleVoucherWarmupResult result = service.warmUp(1001L);
 
+        String voucherCacheKey = CacheConstants.FLASH_SALE_VOUCHER_KEY_PREFIX + 1001L;
+        verify(redisTemplate).delete(voucherCacheKey);
+        ArgumentCaptor<Map<String, String>> metadataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(hashOperations).putAll(eq(voucherCacheKey), metadataCaptor.capture());
+        Map<String, String> metadata = metadataCaptor.getValue();
+        assertThat(metadata).containsEntry("voucherId", "1001");
+        assertThat(metadata).containsEntry("status", "2");
+        assertThat(Long.parseLong(metadata.get("startTime"))).isGreaterThan(0L);
+        assertThat(Long.parseLong(metadata.get("endTime"))).isGreaterThan(0L);
         ArgumentCaptor<Duration> ttlCaptor = ArgumentCaptor.forClass(Duration.class);
-        verify(cacheClient).set(
-                eq(CacheConstants.FLASH_SALE_VOUCHER_KEY_PREFIX + 1001L),
-                same(voucher),
-                ttlCaptor.capture());
+        verify(redisTemplate).expire(eq(voucherCacheKey), ttlCaptor.capture());
         assertThat(ttlCaptor.getValue()).isGreaterThan(Duration.ofMinutes(30));
         verify(valueOperations).set(CacheConstants.FLASH_SALE_STOCK_KEY_PREFIX + 1001L, "12000");
         ArgumentCaptor<String> tempUsersKeyCaptor = ArgumentCaptor.forClass(String.class);
@@ -106,7 +112,7 @@ class FlashSaleVoucherWarmupServiceTest {
                 .isThrownBy(() -> service.warmUp(1001L))
                 .satisfies(error -> assertThat(error.getCode()).isEqualTo(ErrorCode.NOT_FOUND));
 
-        verify(cacheClient, never()).set(any(), any(), any());
+        verify(redisTemplate, never()).opsForHash();
         verify(redisTemplate, never()).opsForValue();
         verify(redisTemplate, never()).opsForSet();
     }

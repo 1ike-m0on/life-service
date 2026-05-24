@@ -4,6 +4,9 @@ target/
 docs/
 frontend/node_modules/
 frontend/dist/
+tests/load/jmeter/data/*.csv
+tests/load/jmeter/results/
+jmeter.log
 src/main/resources/application-local.yaml
 .env
 .env.*

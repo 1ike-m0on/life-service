@@ -1,6 +1,8 @@
 package io.github.ikemoon.lifeservice.infrastructure.ratelimit;
 
 import io.github.ikemoon.lifeservice.common.exception.RateLimitException;
+import io.github.ikemoon.lifeservice.infrastructure.metrics.RateLimitMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Method;
 
@@ -37,10 +40,12 @@ class RateLimitAspectTest {
     private MethodSignature methodSignature;
 
     private RateLimitAspect aspect;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
-        aspect = new RateLimitAspect(slidingWindowRateLimiter, keyResolver);
+        meterRegistry = new SimpleMeterRegistry();
+        aspect = new RateLimitAspect(slidingWindowRateLimiter, keyResolver, new RateLimitMetrics(meterRegistry));
     }
 
     @Test
@@ -57,6 +62,7 @@ class RateLimitAspectTest {
 
         assertThat(result).isEqualTo("ok");
         verify(slidingWindowRateLimiter, times(2)).isAllowed(eq("life:rate:test"), anyInt(), anyInt());
+        assertThat(rateLimitCounter("life.rate.limit.allowed", "SampleController.multiple")).isEqualTo(2);
     }
 
     @Test
@@ -70,6 +76,7 @@ class RateLimitAspectTest {
         assertThatExceptionOfType(RateLimitException.class)
                 .isThrownBy(() -> aspect.rateLimit(joinPoint))
                 .withMessage("closed");
+        assertThat(rateLimitCounter("life.rate.limit.rejected", "SampleController.closed")).isEqualTo(1);
     }
 
     @Test
@@ -84,6 +91,7 @@ class RateLimitAspectTest {
         assertThatExceptionOfType(RateLimitException.class)
                 .isThrownBy(() -> aspect.rateLimit(joinPoint))
                 .withMessage("closed");
+        assertThat(rateLimitCounter("life.rate.limit.rejected", "SampleController.closed")).isEqualTo(1);
     }
 
     @Test
@@ -99,6 +107,41 @@ class RateLimitAspectTest {
         Object result = aspect.rateLimit(joinPoint);
 
         assertThat(result).isEqualTo("ok");
+        assertThat(rateLimitCounter("life.rate.limit.allowed", "SampleController.open")).isEqualTo(1);
+    }
+
+    @Test
+    void rateLimitSkipsIpRuleWhenIpLimitIsDisabled() throws Throwable {
+        ReflectionTestUtils.setField(aspect, "ipEnabled", false);
+        Method method = SampleController.class.getDeclaredMethod("globalAndIp");
+        prepareJoinPoint(method);
+        when(keyResolver.resolveKey(any(RateLimiter.class), eq(method), eq(SampleController.class)))
+                .thenReturn("life:rate:test");
+        when(slidingWindowRateLimiter.isAllowed("life:rate:test", 1, 2)).thenReturn(true);
+        when(joinPoint.proceed()).thenReturn("ok");
+
+        Object result = aspect.rateLimit(joinPoint);
+
+        assertThat(result).isEqualTo("ok");
+        verify(slidingWindowRateLimiter, times(1)).isAllowed("life:rate:test", 1, 2);
+        assertThat(rateLimitCounter("life.rate.limit.allowed", "SampleController.globalAndIp")).isEqualTo(1);
+    }
+
+    @Test
+    void rateLimitUsesGlobalLimitOverrideWhenConfigured() throws Throwable {
+        ReflectionTestUtils.setField(aspect, "globalLimitOverride", 5000);
+        Method method = SampleController.class.getDeclaredMethod("globalOnly");
+        prepareJoinPoint(method);
+        when(keyResolver.resolveKey(any(RateLimiter.class), eq(method), eq(SampleController.class)))
+                .thenReturn("life:rate:test");
+        when(slidingWindowRateLimiter.isAllowed("life:rate:test", 1, 5000)).thenReturn(true);
+        when(joinPoint.proceed()).thenReturn("ok");
+
+        Object result = aspect.rateLimit(joinPoint);
+
+        assertThat(result).isEqualTo("ok");
+        verify(slidingWindowRateLimiter).isAllowed("life:rate:test", 1, 5000);
+        assertThat(rateLimitCounter("life.rate.limit.allowed", "SampleController.globalOnly")).isEqualTo(1);
     }
 
     private void prepareJoinPoint(Method method) {
@@ -107,11 +150,31 @@ class RateLimitAspectTest {
         when(methodSignature.getMethod()).thenReturn(method);
     }
 
+    private double rateLimitCounter(String name, String endpointGroup) {
+        return meterRegistry.counter(
+                name,
+                "rule", "test",
+                "scope", "global",
+                "endpoint_group", endpointGroup)
+                .count();
+    }
+
     static class SampleController {
 
         @RateLimiter(key = "life:rate:test:", window = 1, limit = 2)
         @RateLimiter(key = "life:rate:test:", window = 10, limit = 3)
         String multiple() {
+            return "ok";
+        }
+
+        @RateLimiter(key = "life:rate:test:", window = 1, limit = 2)
+        @RateLimiter(key = "life:rate:test:", window = 10, limit = 3, type = RateLimitType.IP)
+        String globalAndIp() {
+            return "ok";
+        }
+
+        @RateLimiter(key = "life:rate:test:", window = 1, limit = 1000, type = RateLimitType.GLOBAL)
+        String globalOnly() {
             return "ok";
         }
 

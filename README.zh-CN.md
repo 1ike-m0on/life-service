@@ -55,7 +55,7 @@ flowchart LR
 更多说明：
 
 - [架构说明](ARCHITECTURE.md)
-- [Benchmark 摘要](BENCHMARK.md)
+- [Benchmark 摘要](BENCHMARK.md)，包含 ★ V2.1 监控压测调优对比
 - [部署指南](DEPLOYMENT.md)
 
 ## 技术栈

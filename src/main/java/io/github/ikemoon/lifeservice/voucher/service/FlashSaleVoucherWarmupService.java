@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import io.github.ikemoon.lifeservice.common.exception.BusinessException;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
-import io.github.ikemoon.lifeservice.infrastructure.cache.CacheClient;
 import io.github.ikemoon.lifeservice.infrastructure.cache.CacheConstants;
 import io.github.ikemoon.lifeservice.order.entity.VoucherOrder;
 import io.github.ikemoon.lifeservice.order.mapper.VoucherOrderMapper;
@@ -17,7 +16,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -30,17 +32,14 @@ public class FlashSaleVoucherWarmupService {
 
     private final FlashSaleVoucherMapper flashSaleVoucherMapper;
     private final VoucherOrderMapper voucherOrderMapper;
-    private final CacheClient cacheClient;
     private final StringRedisTemplate redisTemplate;
 
     public FlashSaleVoucherWarmupService(
             FlashSaleVoucherMapper flashSaleVoucherMapper,
             VoucherOrderMapper voucherOrderMapper,
-            CacheClient cacheClient,
             StringRedisTemplate redisTemplate) {
         this.flashSaleVoucherMapper = flashSaleVoucherMapper;
         this.voucherOrderMapper = voucherOrderMapper;
-        this.cacheClient = cacheClient;
         this.redisTemplate = redisTemplate;
     }
 
@@ -57,7 +56,7 @@ public class FlashSaleVoucherWarmupService {
         Duration metadataTtl = metadataTtl(voucher.getEndTime());
         List<String> purchasedUserIds = purchasedUserIds(voucherId);
 
-        cacheClient.set(voucherCacheKey, voucher, metadataTtl);
+        rebuildVoucherMetadata(voucherCacheKey, voucher, metadataTtl);
         redisTemplate.opsForValue().set(stockKey, String.valueOf(voucher.getStock()));
         rebuildUsersKey(usersKey, purchasedUserIds);
 
@@ -82,6 +81,25 @@ public class FlashSaleVoucherWarmupService {
             return MIN_METADATA_TTL;
         }
         return ttl;
+    }
+
+    private void rebuildVoucherMetadata(String voucherCacheKey, FlashSaleVoucher voucher, Duration metadataTtl) {
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("voucherId", String.valueOf(voucher.getVoucherId()));
+        metadata.put("status", String.valueOf(voucher.getStatus()));
+        metadata.put("startTime", String.valueOf(toEpochMillis(voucher.getStartTime())));
+        metadata.put("endTime", String.valueOf(toEpochMillis(voucher.getEndTime())));
+
+        redisTemplate.delete(voucherCacheKey);
+        redisTemplate.opsForHash().putAll(voucherCacheKey, metadata);
+        redisTemplate.expire(voucherCacheKey, metadataTtl);
+    }
+
+    private static long toEpochMillis(LocalDateTime time) {
+        if (time == null) {
+            return 0L;
+        }
+        return time.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
     private List<String> purchasedUserIds(Long voucherId) {

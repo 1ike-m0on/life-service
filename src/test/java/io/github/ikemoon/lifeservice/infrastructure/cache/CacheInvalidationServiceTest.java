@@ -3,6 +3,8 @@ package io.github.ikemoon.lifeservice.infrastructure.cache;
 import io.github.ikemoon.lifeservice.infrastructure.cache.entity.CacheDeleteTask;
 import io.github.ikemoon.lifeservice.infrastructure.cache.enums.CacheDeleteTaskStatus;
 import io.github.ikemoon.lifeservice.infrastructure.cache.mapper.CacheDeleteTaskMapper;
+import io.github.ikemoon.lifeservice.infrastructure.metrics.CacheMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -28,6 +30,7 @@ class CacheInvalidationServiceTest {
     private LocalCacheService localCacheService;
     private CacheDeleteTaskMapper cacheDeleteTaskMapper;
     private CacheProperties cacheProperties;
+    private SimpleMeterRegistry meterRegistry;
     private CacheInvalidationService service;
 
     @BeforeEach
@@ -38,7 +41,13 @@ class CacheInvalidationServiceTest {
         cacheProperties = new CacheProperties();
         cacheProperties.getInvalidation().setRetryDelay(Duration.ofMinutes(1));
         cacheProperties.getInvalidation().setMaxRetryCount(5);
-        service = new CacheInvalidationService(redisTemplate, localCacheService, cacheDeleteTaskMapper, cacheProperties);
+        meterRegistry = new SimpleMeterRegistry();
+        service = new CacheInvalidationService(
+                redisTemplate,
+                localCacheService,
+                cacheDeleteTaskMapper,
+                cacheProperties,
+                new CacheMetrics(meterRegistry, cacheDeleteTaskMapper));
     }
 
     @Test
@@ -65,6 +74,7 @@ class CacheInvalidationServiceTest {
         assertThat(task.getRetryCount()).isZero();
         assertThat(task.getStatus()).isEqualTo(CacheDeleteTaskStatus.PENDING.code());
         assertThat(task.getNextRetryAt()).isNotNull();
+        assertThat(counter("life.cache.delete.failure")).isEqualTo(1);
     }
 
     @Test
@@ -114,6 +124,7 @@ class CacheInvalidationServiceTest {
 
         assertThat(deleted).isZero();
         verify(cacheDeleteTaskMapper).update(eq(null), any());
+        assertThat(counter("life.cache.delete.task.failed")).isZero();
     }
 
     @Test
@@ -127,6 +138,7 @@ class CacheInvalidationServiceTest {
 
         assertThat(deleted).isZero();
         verify(cacheDeleteTaskMapper).update(eq(null), any());
+        assertThat(counter("life.cache.delete.task.failed")).isZero();
     }
 
     @Test
@@ -139,6 +151,7 @@ class CacheInvalidationServiceTest {
 
         assertThat(deleted).isZero();
         verify(cacheDeleteTaskMapper).update(eq(null), any());
+        assertThat(counter("life.cache.delete.task.failed")).isEqualTo(1);
     }
 
     private static CacheDeleteTask pendingTask(Long id, int retryCount) {
@@ -148,5 +161,9 @@ class CacheInvalidationServiceTest {
         task.setRetryCount(retryCount);
         task.setStatus(CacheDeleteTaskStatus.PENDING.code());
         return task;
+    }
+
+    private double counter(String name) {
+        return meterRegistry.counter(name).count();
     }
 }

@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import io.github.ikemoon.lifeservice.order.entity.StockReleaseTask;
 import io.github.ikemoon.lifeservice.order.enums.StockReleaseTaskStatus;
 import io.github.ikemoon.lifeservice.order.mapper.StockReleaseTaskMapper;
-import io.github.ikemoon.lifeservice.voucher.entity.FlashSaleVoucher;
 import io.github.ikemoon.lifeservice.voucher.mapper.FlashSaleVoucherMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

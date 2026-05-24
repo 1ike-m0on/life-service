@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import io.github.ikemoon.lifeservice.infrastructure.cache.entity.CacheDeleteTask;
 import io.github.ikemoon.lifeservice.infrastructure.cache.enums.CacheDeleteTaskStatus;
 import io.github.ikemoon.lifeservice.infrastructure.cache.mapper.CacheDeleteTaskMapper;
+import io.github.ikemoon.lifeservice.infrastructure.metrics.CacheMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -22,16 +23,19 @@ public class CacheInvalidationService {
     private final LocalCacheService localCacheService;
     private final CacheDeleteTaskMapper cacheDeleteTaskMapper;
     private final CacheProperties cacheProperties;
+    private final CacheMetrics cacheMetrics;
 
     public CacheInvalidationService(
             StringRedisTemplate redisTemplate,
             LocalCacheService localCacheService,
             CacheDeleteTaskMapper cacheDeleteTaskMapper,
-            CacheProperties cacheProperties) {
+            CacheProperties cacheProperties,
+            CacheMetrics cacheMetrics) {
         this.redisTemplate = redisTemplate;
         this.localCacheService = localCacheService;
         this.cacheDeleteTaskMapper = cacheDeleteTaskMapper;
         this.cacheProperties = cacheProperties;
+        this.cacheMetrics = cacheMetrics;
     }
 
     public boolean invalidate(String cacheKey, String reason) {
@@ -41,6 +45,7 @@ public class CacheInvalidationService {
             return true;
         } catch (RuntimeException e) {
             recordDeleteTask(cacheKey, reason, e);
+            cacheMetrics.recordDeleteFailure();
             log.warn("Cache delete failed and task recorded, cacheKey={}", cacheKey, e);
             return false;
         }
@@ -71,6 +76,7 @@ public class CacheInvalidationService {
         } catch (RuntimeException e) {
             RetryDecision decision = markRetry(task, e);
             if (decision.failed()) {
+                cacheMetrics.recordDeleteTaskFinalFailure();
                 log.error("Cache delete retry exhausted, taskId={}, cacheKey={}, retryCount={}",
                         task.getId(), task.getCacheKey(), decision.retryCount(), e);
             } else {

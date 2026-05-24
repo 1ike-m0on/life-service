@@ -55,7 +55,7 @@ flowchart LR
 More details:
 
 - [Architecture notes](ARCHITECTURE.md)
-- [Benchmark summary](BENCHMARK.md)
+- [Benchmark summary](BENCHMARK.md), including ★ V2.1 monitored tuning results
 - [Deployment guide](DEPLOYMENT.md)
 
 ## Tech Stack
