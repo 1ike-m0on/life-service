@@ -90,10 +90,6 @@ services:
       TZ: Asia/Shanghai
       NAMESRV_ADDR: rocketmq-namesrv:9876
       JAVA_OPT_EXT: "${ROCKETMQ_BROKER_JAVA_OPT_EXT:--server -Xms512m -Xmx512m -Xmn256m}"
-    ports:
-      - "${ROCKETMQ_BROKER_FAST_PORT:-10909}:10909"
-      - "${ROCKETMQ_BROKER_PORT:-10911}:10911"
-      - "${ROCKETMQ_BROKER_HA_PORT:-10912}:10912"
     command: |
       sh -c "cat > /home/rocketmq/broker.conf <<EOF
       brokerClusterName=DefaultCluster
@@ -154,7 +150,11 @@ services:
       REDIS_POOL_MAX_IDLE: ${REDIS_POOL_MAX_IDLE:-16}
       REDIS_POOL_MIN_IDLE: ${REDIS_POOL_MIN_IDLE:-4}
       ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
-      ORDER_MESSAGE_PROVIDER: rocketmq
+      ORDER_MESSAGE_PROVIDER: ${ORDER_MESSAGE_PROVIDER:-rocketmq}
+      ORDER_CLOSE_ENABLED: ${ORDER_CLOSE_ENABLED:-true}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_IP_ENABLED: ${RATE_LIMIT_IP_ENABLED:-true}
+      RATE_LIMIT_GLOBAL_LIMIT_OVERRIDE: ${RATE_LIMIT_GLOBAL_LIMIT_OVERRIDE:-0}
       FLASH_SALE_STARTUP_WARMUP_ENABLED: ${FLASH_SALE_STARTUP_WARMUP_ENABLED:-true}
       FLASH_SALE_STARTUP_WARMUP_FAIL_FAST: ${FLASH_SALE_STARTUP_WARMUP_FAIL_FAST:-false}
       FLASH_SALE_STARTUP_WARMUP_MAX_VOUCHERS: ${FLASH_SALE_STARTUP_WARMUP_MAX_VOUCHERS:-200}
@@ -207,6 +207,53 @@ services:
     networks:
       life-service-net:
 
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v2.54.1}
+    container_name: life-service-prometheus
+    profiles:
+      - monitor
+    restart: unless-stopped
+    mem_limit: ${PROMETHEUS_MEM_LIMIT:-256m}
+    memswap_limit: ${PROMETHEUS_MEMSWAP_LIMIT:-256m}
+    cpus: ${PROMETHEUS_CPUS:-0.25}
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-7d}
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      life-service-net:
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-11.2.2}
+    container_name: life-service-grafana
+    profiles:
+      - monitor
+    restart: unless-stopped
+    mem_limit: ${GRAFANA_MEM_LIMIT:-256m}
+    memswap_limit: ${GRAFANA_MEMSWAP_LIMIT:-256m}
+    cpus: ${GRAFANA_CPUS:-0.25}
+    depends_on:
+      - prometheus
+    environment:
+      TZ: Asia/Shanghai
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      life-service-net:
+
 networks:
   life-service-net:
     driver: bridge
@@ -220,3 +267,5 @@ volumes:
   rocketmq_namesrv_logs:
   rocketmq_broker_logs:
   rocketmq_broker_store:
+  prometheus_data:
+  grafana_data:

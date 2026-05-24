@@ -1,6 +1,7 @@
 package io.github.ikemoon.lifeservice.order.service.close;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import io.github.ikemoon.lifeservice.infrastructure.metrics.OrderMetrics;
 import io.github.ikemoon.lifeservice.order.entity.StockReleaseTask;
 import io.github.ikemoon.lifeservice.order.entity.VoucherOrder;
 import io.github.ikemoon.lifeservice.order.enums.OrderStatus;
@@ -22,16 +23,19 @@ public class VoucherOrderCloseService {
     private final VoucherOrderCloseTxService closeTxService;
     private final StockReleaseService stockReleaseService;
     private final OrderCloseProperties properties;
+    private final OrderMetrics orderMetrics;
 
     public VoucherOrderCloseService(
             VoucherOrderMapper voucherOrderMapper,
             VoucherOrderCloseTxService closeTxService,
             StockReleaseService stockReleaseService,
-            OrderCloseProperties properties) {
+            OrderCloseProperties properties,
+            OrderMetrics orderMetrics) {
         this.voucherOrderMapper = voucherOrderMapper;
         this.closeTxService = closeTxService;
         this.stockReleaseService = stockReleaseService;
         this.properties = properties;
+        this.orderMetrics = orderMetrics;
     }
 
     public OrderCloseSummary closeExpiredOrders() {
@@ -52,6 +56,7 @@ public class VoucherOrderCloseService {
                     continue;
                 }
                 closed++;
+                orderMetrics.recordOrderCloseSuccess();
                 if (stockReleaseService.release(task)) {
                     stockReleased++;
                 } else {
@@ -59,6 +64,7 @@ public class VoucherOrderCloseService {
                 }
             } catch (RuntimeException e) {
                 failed++;
+                orderMetrics.recordOrderCloseFailure();
                 log.warn("Failed to close expired order, orderId={}", order.getId(), e);
             }
         }

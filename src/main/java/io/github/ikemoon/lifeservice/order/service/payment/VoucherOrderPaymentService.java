@@ -3,6 +3,7 @@ package io.github.ikemoon.lifeservice.order.service.payment;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
+import io.github.ikemoon.lifeservice.infrastructure.metrics.OrderMetrics;
 import io.github.ikemoon.lifeservice.order.entity.VoucherOrder;
 import io.github.ikemoon.lifeservice.order.enums.OrderStatus;
 import io.github.ikemoon.lifeservice.order.mapper.VoucherOrderMapper;
@@ -16,9 +17,11 @@ import java.time.LocalDateTime;
 public class VoucherOrderPaymentService {
 
     private final VoucherOrderMapper voucherOrderMapper;
+    private final OrderMetrics orderMetrics;
 
-    public VoucherOrderPaymentService(VoucherOrderMapper voucherOrderMapper) {
+    public VoucherOrderPaymentService(VoucherOrderMapper voucherOrderMapper, OrderMetrics orderMetrics) {
         this.voucherOrderMapper = voucherOrderMapper;
+        this.orderMetrics = orderMetrics;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -52,6 +55,7 @@ public class VoucherOrderPaymentService {
             return VoucherOrderPaymentResult.alreadyPaid(orderNo, OrderStatus.PAID.code());
         }
         if (Integer.valueOf(OrderStatus.CLOSED.code()).equals(order.getStatus())) {
+            orderMetrics.recordPaymentOrderClosed();
             return VoucherOrderPaymentResult.fail(ErrorCode.ORDER_CLOSED, "Voucher order already closed");
         }
         return VoucherOrderPaymentResult.fail(ErrorCode.BAD_REQUEST, "Voucher order is not payable");

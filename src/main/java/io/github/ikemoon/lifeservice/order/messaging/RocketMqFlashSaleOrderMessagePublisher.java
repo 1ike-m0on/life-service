@@ -22,9 +22,9 @@ public class RocketMqFlashSaleOrderMessagePublisher implements FlashSaleOrderMes
 
     @Override
     public void publish(FlashSaleOrderCommand command) {
-        SendResult sendResult = rocketMQTemplate.syncSend(properties.getFlashSaleOrderTopic(), command);
-        if (sendResult == null || sendResult.getSendStatus() != SendStatus.SEND_OK) {
-            throw new IllegalStateException("Failed to send flash sale order message, result=" + sendResult);
+        SendResult result = rocketMQTemplate.syncSend(properties.getFlashSaleOrderTopic(), command);
+        if (result == null || result.getSendStatus() != SendStatus.SEND_OK) {
+            throw new IllegalStateException("RocketMQ send failed");
         }
     }
 }

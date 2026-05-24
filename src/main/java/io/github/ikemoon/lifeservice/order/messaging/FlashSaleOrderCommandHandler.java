@@ -19,8 +19,6 @@ import java.time.LocalDateTime;
 @Service
 public class FlashSaleOrderCommandHandler {
 
-    static final int ORDER_STATUS_PENDING_PAYMENT = 1;
-
     private final VoucherMapper voucherMapper;
     private final FlashSaleVoucherMapper flashSaleVoucherMapper;
     private final VoucherOrderMapper voucherOrderMapper;

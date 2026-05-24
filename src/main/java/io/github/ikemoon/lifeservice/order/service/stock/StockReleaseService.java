@@ -3,6 +3,7 @@ package io.github.ikemoon.lifeservice.order.service.stock;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import io.github.ikemoon.lifeservice.infrastructure.cache.CacheConstants;
+import io.github.ikemoon.lifeservice.infrastructure.metrics.OrderMetrics;
 import io.github.ikemoon.lifeservice.order.service.close.OrderCloseProperties;
 import io.github.ikemoon.lifeservice.order.entity.StockReleaseTask;
 import io.github.ikemoon.lifeservice.order.enums.StockReleaseTaskStatus;
@@ -43,16 +44,19 @@ public class StockReleaseService {
     private final StockReleaseTxService stockReleaseTxService;
     private final StockReleaseTaskMapper stockReleaseTaskMapper;
     private final OrderCloseProperties properties;
+    private final OrderMetrics orderMetrics;
 
     public StockReleaseService(
             StringRedisTemplate redisTemplate,
             StockReleaseTxService stockReleaseTxService,
             StockReleaseTaskMapper stockReleaseTaskMapper,
-            OrderCloseProperties properties) {
+            OrderCloseProperties properties,
+            OrderMetrics orderMetrics) {
         this.redisTemplate = redisTemplate;
         this.stockReleaseTxService = stockReleaseTxService;
         this.stockReleaseTaskMapper = stockReleaseTaskMapper;
         this.properties = properties;
+        this.orderMetrics = orderMetrics;
     }
 
     public boolean release(StockReleaseTask task) {
@@ -62,10 +66,12 @@ public class StockReleaseService {
             return true;
         } catch (RuntimeException e) {
             RetryDecision decision = markRetry(task, e);
+            orderMetrics.recordStockReleaseFailure();
             if (decision.failed()) {
                 log.error("Stock release retry exhausted, orderId={}, voucherId={}, retryCount={}",
                         task.getOrderId(), task.getVoucherId(), decision.retryCount(), e);
             } else {
+                orderMetrics.recordStockReleaseRetry();
                 log.warn("Stock release failed, orderId={}, voucherId={}, retryCount={}",
                         task.getOrderId(), task.getVoucherId(), decision.retryCount(), e);
             }
