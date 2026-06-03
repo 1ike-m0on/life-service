@@ -116,6 +116,62 @@ Key application metrics:
 | `life_rate_limit_allowed_total` | Requests accepted by the sliding-window limiter |
 | `life_rate_limit_rejected_total` | Requests rejected by the sliding-window limiter |
 
+## Kubernetes Local Deployment
+
+`deploy/k8s` contains a Kustomize-based local Kubernetes deployment foundation.
+It is intended for Docker Desktop Kubernetes, kind, or minikube demos and for
+learning the deployment shape. It is not yet a production-grade highly available
+Kubernetes setup.
+
+Requirements:
+
+- `kubectl`
+- Docker Desktop Kubernetes, kind, minikube, or another local Kubernetes cluster
+- A default StorageClass for MySQL persistent storage
+- Local images named `life-service-backend:local` and `life-service-frontend:local`
+
+Build the local images first:
+
+```bash
+docker compose build backend frontend
+```
+
+Apply the local overlay:
+
+```bash
+kubectl apply -k deploy/k8s/overlays/local
+kubectl get pods -n life-service -w
+```
+
+Open the frontend through port-forwarding:
+
+```bash
+kubectl -n life-service port-forward svc/frontend 8080:80
+```
+
+Then visit:
+
+```text
+http://localhost:8080
+```
+
+Backend health can be checked with:
+
+```bash
+kubectl -n life-service port-forward svc/backend 8081:8081
+curl http://localhost:8081/actuator/health
+```
+
+Clean up the local Kubernetes deployment:
+
+```bash
+kubectl delete namespace life-service
+```
+
+See [deploy/k8s/README.md](deploy/k8s/README.md) for manifest layout,
+configuration notes, troubleshooting commands, and the intended next steps for
+future production overlays.
+
 ## Demo Data
 
 The project already contains Flyway demo seed data:

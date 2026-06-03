@@ -17,6 +17,7 @@ deploy/.env
 deploy/.env.*
 !deploy/.env.example
 !deploy/.env.prod.example
+deploy/k8s/**/secret.local.yaml
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

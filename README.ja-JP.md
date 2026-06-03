@@ -36,6 +36,7 @@ RocketMQ を使ったローカルライフサービス向けの full-stack scaff
 - Redis ZSet + Lua によるスライディングウィンドウレート制限
 - traceId 付きリクエストログと Actuator ヘルスチェック
 - Docker Compose でフロントエンド、バックエンド、ミドルウェアを一括起動
+- Kustomize ベースのローカル Kubernetes デプロイ基盤
 
 ## Architecture
 
@@ -57,6 +58,7 @@ More details:
 - [Architecture notes](ARCHITECTURE.md)
 - [Benchmark summary](BENCHMARK.md), including ★ V2.1 monitored tuning results
 - [Deployment guide](DEPLOYMENT.md)
+- [Kubernetes deployment runbook](deploy/k8s/README.md)
 
 ## Tech Stack
 
@@ -68,7 +70,7 @@ More details:
 | Cache | Redis, Caffeine |
 | Messaging | RocketMQ |
 | Gateway | Nginx |
-| Delivery | Docker Compose, GitHub Actions |
+| Delivery | Docker Compose, Kubernetes, GitHub Actions |
 
 ## Quick Start
 
@@ -106,6 +108,23 @@ docker compose down -v
 
 ポート、リソース制限、RocketMQ Dashboard、開発用ミドルウェア構成、公開イメージでの起動は
 [DEPLOYMENT.md](DEPLOYMENT.md) を参照してください。
+
+## Kubernetes ローカルデプロイ
+
+`deploy/k8s` には Docker Desktop Kubernetes、kind、minikube 向けの
+ローカル Kubernetes デプロイ基盤があります。学習とデモ用途のための
+構成であり、本番級の高可用 Kubernetes 構成ではありません。
+
+```bash
+kubectl apply -k deploy/k8s/overlays/local
+kubectl get pods -n life-service -w
+kubectl -n life-service port-forward svc/frontend 8080:80
+```
+
+`http://localhost:8080` を開きます。
+
+Kustomize の構成、ヘルスチェック、port-forward、クリーンアップ手順は
+[deploy/k8s/README.md](deploy/k8s/README.md) を参照してください。
 
 ## Demo Account
 
@@ -149,7 +168,7 @@ UI 上で通常のビジネスフィードバックとして表示されます�
 |   |-- order/                # flash-sale order, close, payment, stock release
 |   `-- user/                 # email login and token auth
 |-- src/main/resources/db/    # Flyway migrations and demo data
-|-- deploy/                   # compose templates and env examples
+|-- deploy/                   # compose templates, monitoring config, and k8s manifests
 |-- compose.yaml              # full local demo stack
 |-- ARCHITECTURE.md           # architecture notes
 |-- BENCHMARK.md              # benchmark summary
@@ -164,6 +183,7 @@ UI 上で通常のビジネスフィードバックとして表示されます�
 - 店舗とクーポンの管理画面
 - Prometheus/Grafana 監視
 - 複数インスタンス構成の検証
+- Production-grade Kubernetes overlays
 - Gateway レベルの流量制御とリスク対策
 
 ## Scope

@@ -36,6 +36,7 @@ Life Service 是一个基于 Java 21、Spring Boot 3.5、Vue 3、Redis、MySQL
 - Redis ZSet + Lua 实现滑动窗口限流
 - 统一 traceId 日志与 Actuator 健康检查
 - Docker Compose 一键启动前端、后端和中间件
+- 基于 Kustomize 的本地 Kubernetes 部署基础
 
 ## 架构概览
 
@@ -57,6 +58,7 @@ flowchart LR
 - [架构说明](ARCHITECTURE.md)
 - [Benchmark 摘要](BENCHMARK.md)，包含 ★ V2.1 监控压测调优对比
 - [部署指南](DEPLOYMENT.md)
+- [K8s 部署说明](deploy/k8s/README.md)
 
 ## 技术栈
 
@@ -68,7 +70,7 @@ flowchart LR
 | 缓存 | Redis, Caffeine |
 | 消息队列 | RocketMQ |
 | 网关 | Nginx |
-| 交付 | Docker Compose, GitHub Actions |
+| 交付 | Docker Compose, Kubernetes, GitHub Actions |
 
 ## 快速启动
 
@@ -106,6 +108,23 @@ docker compose down -v
 
 端口、资源限制、RocketMQ Dashboard、开发中间件模式和镜像部署模式见
 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
+## Kubernetes 本地部署
+
+`deploy/k8s` 提供一套面向 Docker Desktop Kubernetes、kind、minikube
+的本地 Kubernetes 部署基础。它主要用于学习、演示和后续云原生改造，
+不是生产级高可用部署方案。
+
+```bash
+kubectl apply -k deploy/k8s/overlays/local
+kubectl get pods -n life-service -w
+kubectl -n life-service port-forward svc/frontend 8080:80
+```
+
+然后访问 `http://localhost:8080`。
+
+完整的 Kustomize 目录结构、健康检查、端口转发和清理命令见
+[deploy/k8s/README.md](deploy/k8s/README.md)。
 
 ## 演示账号
 
@@ -147,7 +166,7 @@ Authorization: Bearer {token}
 |   |-- order/                # 秒杀下单、关单、支付、库存释放
 |   `-- user/                 # 邮箱登录与 Token 鉴权
 |-- src/main/resources/db/    # Flyway 迁移和演示数据
-|-- deploy/                   # Compose 模板和环境变量示例
+|-- deploy/                   # Compose、监控和 K8s 部署文件
 |-- compose.yaml              # 本地完整演示环境
 |-- ARCHITECTURE.md           # 架构说明
 |-- BENCHMARK.md              # Benchmark 摘要
@@ -162,6 +181,7 @@ Authorization: Bearer {token}
 - 商户与优惠券管理端
 - Prometheus/Grafana 监控
 - 多实例部署验证
+- 生产级 Kubernetes overlay
 - 网关级限流与风控
 
 ## 项目定位

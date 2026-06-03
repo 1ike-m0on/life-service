@@ -38,6 +38,7 @@ check order status, and try the payment/close flow from a PC-friendly frontend.
 - Request trace logging, Actuator health, and Prometheus metrics endpoint
 - One-command Docker Compose startup for frontend, backend, and middleware
 - Optional Prometheus and Grafana monitoring profile
+- Local Kubernetes deployment foundation with Kustomize manifests
 
 ## Architecture At A Glance
 
@@ -59,6 +60,7 @@ More details:
 - [Architecture notes](ARCHITECTURE.md)
 - [Benchmark summary](BENCHMARK.md), including ★ V2.1 monitored tuning results
 - [Deployment guide](DEPLOYMENT.md)
+- [Kubernetes deployment runbook](deploy/k8s/README.md)
 
 ## Tech Stack
 
@@ -70,7 +72,7 @@ More details:
 | Cache | Redis, Caffeine |
 | Messaging | RocketMQ |
 | Gateway | Nginx |
-| Delivery | Docker Compose, GitHub Actions |
+| Delivery | Docker Compose, Kubernetes, GitHub Actions |
 
 ## Quick Start
 
@@ -142,6 +144,23 @@ for repeatable flash-sale benchmark runs.
 See [DEPLOYMENT.md](DEPLOYMENT.md) for ports, resource limits, optional
 RocketMQ dashboard, development middleware mode, and published image mode.
 
+## Kubernetes Local Deployment
+
+`deploy/k8s` provides a local Kubernetes deployment foundation for Docker
+Desktop Kubernetes, kind, or minikube. It is intended for learning and demo
+deployment, not production-grade high availability.
+
+```bash
+kubectl apply -k deploy/k8s/overlays/local
+kubectl get pods -n life-service -w
+kubectl -n life-service port-forward svc/frontend 8080:80
+```
+
+Open `http://localhost:8080`.
+
+See [deploy/k8s/README.md](deploy/k8s/README.md) for the full Kustomize
+structure, health checks, port-forwarding commands, and cleanup steps.
+
 ## Demo Account
 
 The Docker demo profile loads seed data and warms eligible flash-sale vouchers
@@ -184,7 +203,7 @@ ready, and rate limiting is returned as normal product feedback in the UI.
 |   |-- order/                # flash-sale order, close, payment, stock release
 |   `-- user/                 # email login and token auth
 |-- src/main/resources/db/    # Flyway migrations and demo data
-|-- deploy/                   # compose templates and environment examples
+|-- deploy/                   # compose templates, monitoring config, and k8s manifests
 |-- compose.yaml              # one-command local demo stack
 |-- ARCHITECTURE.md           # architecture notes
 |-- BENCHMARK.md              # benchmark summary
@@ -199,6 +218,7 @@ ready, and rate limiting is returned as normal product feedback in the UI.
 - Admin-side merchant and voucher management
 - Grafana dashboards and alert rules
 - Multi-instance deployment verification
+- Production-grade Kubernetes overlays
 - Gateway-level traffic protection and risk control
 
 ## Scope
