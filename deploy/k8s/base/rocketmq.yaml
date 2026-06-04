@@ -1,0 +1,211 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-namesrv
+  labels:
+    app.kubernetes.io/name: rocketmq-namesrv
+    app.kubernetes.io/part-of: life-service
+spec:
+  type: ClusterIP
+  ports:
+    - name: namesrv
+      port: 9876
+      targetPort: namesrv
+  selector:
+    app.kubernetes.io/name: rocketmq-namesrv
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rocketmq-namesrv
+  labels:
+    app.kubernetes.io/name: rocketmq-namesrv
+    app.kubernetes.io/part-of: life-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rocketmq-namesrv
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rocketmq-namesrv
+        app.kubernetes.io/part-of: life-service
+    spec:
+      containers:
+        - name: namesrv
+          image: apache/rocketmq:5.5.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - sh mqnamesrv
+          env:
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: life-service-config
+                  key: TZ
+            - name: JAVA_OPT_EXT
+              value: "-server -Xms192m -Xmx192m -Xmn96m"
+          ports:
+            - name: namesrv
+              containerPort: 9876
+          startupProbe:
+            tcpSocket:
+              port: namesrv
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: namesrv
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: namesrv
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-broker
+  labels:
+    app.kubernetes.io/name: rocketmq-broker
+    app.kubernetes.io/part-of: life-service
+spec:
+  type: ClusterIP
+  ports:
+    - name: fast
+      port: 10909
+      targetPort: fast
+    - name: broker
+      port: 10911
+      targetPort: broker
+    - name: ha
+      port: 10912
+      targetPort: ha
+  selector:
+    app.kubernetes.io/name: rocketmq-broker
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rocketmq-broker
+  labels:
+    app.kubernetes.io/name: rocketmq-broker
+    app.kubernetes.io/part-of: life-service
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rocketmq-broker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rocketmq-broker
+        app.kubernetes.io/part-of: life-service
+    spec:
+      initContainers:
+        - name: wait-rocketmq-namesrv
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z rocketmq-namesrv 9876; do
+                echo waiting for rocketmq-namesrv
+                sleep 2
+              done
+      containers:
+        - name: broker
+          image: apache/rocketmq:5.5.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+          args:
+            - |
+              cat > /home/rocketmq/broker.conf <<EOF
+              brokerClusterName=DefaultCluster
+              brokerName=broker-a
+              brokerId=0
+              brokerIP1=${POD_IP}
+              namesrvAddr=rocketmq-namesrv:9876
+              deleteWhen=04
+              fileReservedTime=48
+              brokerRole=ASYNC_MASTER
+              flushDiskType=ASYNC_FLUSH
+              autoCreateTopicEnable=true
+              autoCreateSubscriptionGroup=true
+              listenPort=10911
+              storePathRootDir=/home/rocketmq/store
+              storePathCommitLog=/home/rocketmq/store/commitlog
+              EOF
+              exec sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/broker.conf
+          env:
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: life-service-config
+                  key: TZ
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: NAMESRV_ADDR
+              value: rocketmq-namesrv:9876
+            - name: JAVA_OPT_EXT
+              value: "-server -Xms512m -Xmx512m -Xmn256m"
+          ports:
+            - name: fast
+              containerPort: 10909
+            - name: broker
+              containerPort: 10911
+            - name: ha
+              containerPort: 10912
+          volumeMounts:
+            - name: rocketmq-store
+              mountPath: /home/rocketmq/store
+          startupProbe:
+            tcpSocket:
+              port: broker
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            tcpSocket:
+              port: broker
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: broker
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 1024Mi
+      volumes:
+        - name: rocketmq-store
+          emptyDir: {}
