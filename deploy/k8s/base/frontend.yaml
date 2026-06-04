@@ -6,6 +6,7 @@ metadata:
     app.kubernetes.io/name: frontend
     app.kubernetes.io/part-of: life-service
 spec:
+  type: ClusterIP
   ports:
     - name: http
       port: 80
@@ -38,10 +39,14 @@ spec:
           command:
             - sh
             - -c
-            - until wget -qO- http://backend:8081/actuator/health; do echo waiting for backend; sleep 2; done
+            - |
+              until wget -qO- http://backend:8081/actuator/health; do
+                echo waiting for backend
+                sleep 2
+              done
       containers:
         - name: frontend
-          image: ghcr.io/1ike-m0on/life-service-frontend:latest
+          image: life-service-frontend:local
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

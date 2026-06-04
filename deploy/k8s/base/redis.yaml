@@ -6,6 +6,7 @@ metadata:
     app.kubernetes.io/name: redis
     app.kubernetes.io/part-of: life-service
 spec:
+  type: ClusterIP
   ports:
     - name: redis
       port: 6379
@@ -14,15 +15,16 @@ spec:
     app.kubernetes.io/name: redis
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: redis
   labels:
     app.kubernetes.io/name: redis
     app.kubernetes.io/part-of: life-service
 spec:
-  serviceName: redis
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: redis
@@ -34,7 +36,7 @@ spec:
     spec:
       containers:
         - name: redis
-          image: redis:7.2
+          image: redis:7.2-alpine
           imagePullPolicy: IfNotPresent
           args:
             - redis-server
@@ -56,12 +58,19 @@ spec:
           volumeMounts:
             - name: redis-data
               mountPath: /data
+          startupProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 20
           readinessProbe:
             exec:
               command:
                 - redis-cli
                 - ping
-            initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 6
@@ -70,7 +79,6 @@ spec:
               command:
                 - redis-cli
                 - ping
-            initialDelaySeconds: 30
             periodSeconds: 15
             timeoutSeconds: 3
             failureThreshold: 6
@@ -81,12 +89,6 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
-  volumeClaimTemplates:
-    - metadata:
-        name: redis-data
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 1Gi
+      volumes:
+        - name: redis-data
+          emptyDir: {}

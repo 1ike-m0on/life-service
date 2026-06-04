@@ -6,6 +6,7 @@ metadata:
     app.kubernetes.io/name: backend
     app.kubernetes.io/part-of: life-service
 spec:
+  type: ClusterIP
   ports:
     - name: http
       port: 8081
@@ -33,29 +34,47 @@ spec:
     spec:
       initContainers:
         - name: wait-mysql
-          image: busybox:1.36
+          image: mysql:8.0
           imagePullPolicy: IfNotPresent
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: life-service-secret
+                  key: MYSQL_ROOT_PASSWORD
           command:
             - sh
             - -c
-            - until nc -z mysql 3306; do echo waiting for mysql; sleep 2; done
+            - |
+              until mysqladmin ping -h mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --silent; do
+                echo waiting for mysql
+                sleep 2
+              done
         - name: wait-redis
+          image: redis:7.2-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until redis-cli -h redis -p 6379 ping | grep -q PONG; do
+                echo waiting for redis
+                sleep 2
+              done
+        - name: wait-rocketmq
           image: busybox:1.36
           imagePullPolicy: IfNotPresent
           command:
             - sh
             - -c
-            - until nc -z redis 6379; do echo waiting for redis; sleep 2; done
-        - name: wait-rocketmq-namesrv
-          image: busybox:1.36
-          imagePullPolicy: IfNotPresent
-          command:
-            - sh
-            - -c
-            - until nc -z rocketmq-namesrv 9876; do echo waiting for rocketmq-namesrv; sleep 2; done
+            - |
+              until nc -z rocketmq-namesrv 9876 && nc -z rocketmq-broker 10911; do
+                echo waiting for rocketmq
+                sleep 2
+              done
       containers:
         - name: backend
-          image: ghcr.io/1ike-m0on/life-service-backend:latest
+          image: life-service-backend:local
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
@@ -73,10 +92,9 @@ spec:
             httpGet:
               path: /actuator/health
               port: http
-            initialDelaySeconds: 20
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 18
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

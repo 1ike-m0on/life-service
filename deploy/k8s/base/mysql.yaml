@@ -6,6 +6,7 @@ metadata:
     app.kubernetes.io/name: mysql
     app.kubernetes.io/part-of: life-service
 spec:
+  type: ClusterIP
   ports:
     - name: mysql
       port: 3306
@@ -14,15 +15,16 @@ spec:
     app.kubernetes.io/name: mysql
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: mysql
   labels:
     app.kubernetes.io/name: mysql
     app.kubernetes.io/part-of: life-service
 spec:
-  serviceName: mysql
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: mysql
@@ -49,6 +51,8 @@ spec:
                 configMapKeyRef:
                   name: life-service-config
                   key: TZ
+            - name: MYSQL_ROOT_HOST
+              value: "%"
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -65,23 +69,30 @@ spec:
           volumeMounts:
             - name: mysql-data
               mountPath: /var/lib/mysql
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 40
           readinessProbe:
             exec:
               command:
                 - sh
                 - -c
-                - mysqladmin ping -h 127.0.0.1 -uroot -p${MYSQL_ROOT_PASSWORD} --silent
-            initialDelaySeconds: 10
+                - mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 10
+            failureThreshold: 6
           livenessProbe:
             exec:
               command:
                 - sh
                 - -c
-                - mysqladmin ping -h 127.0.0.1 -uroot -p${MYSQL_ROOT_PASSWORD} --silent
-            initialDelaySeconds: 60
+                - mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 6
@@ -92,12 +103,6 @@ spec:
             limits:
               cpu: "1"
               memory: 768Mi
-  volumeClaimTemplates:
-    - metadata:
-        name: mysql-data
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 2Gi
+      volumes:
+        - name: mysql-data
+          emptyDir: {}

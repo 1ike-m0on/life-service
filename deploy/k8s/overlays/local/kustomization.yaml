@@ -4,10 +4,10 @@ namespace: life-service
 resources:
   - ../../base
 images:
-  - name: ghcr.io/1ike-m0on/life-service-backend
+  - name: life-service-backend
     newName: life-service-backend
     newTag: local
-  - name: ghcr.io/1ike-m0on/life-service-frontend
+  - name: life-service-frontend
     newName: life-service-frontend
     newTag: local
 generatorOptions:

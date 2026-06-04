@@ -1,83 +1,115 @@
-# Life Service Kubernetes 部署说明
+# Life Service Kubernetes 本地部署
 
-这套 K8s 配置用于补齐 Life Service 的云原生部署能力。当前版本定位是
-**本地 Kubernetes / 学习验证 / 脚手架展示**，目标是让项目可以从 Docker
-Compose 平滑走向 Kubernetes，而不是一次性做成生产级高可用平台。
+这个目录维护 Life Service 的 Kubernetes 编排。当前目标是让项目具备基础云原生部署能力，同时保持本地学习、验收和迭代成本可控。
 
-## 当前包含内容
+重点约定：
 
-`deploy/k8s` 采用 Kustomize 组织：
+- Kubernetes 配置只负责部署，不直接修改前后端源码。
+- 基础设施包括 MySQL、Redis、RocketMQ。
+- 应用包括 backend、frontend。
+- 后端或前端代码变化时，只滚动更新 backend/frontend，不重建 MySQL、Redis、RocketMQ。
+- 只有数据库结构需要从零验证、临时数据已不可用，或基础设施配置变化时，才删除命名空间重建。
+
+## 目录结构
 
 ```text
 deploy/k8s
 ├── base
-│   ├── namespace.yaml
 │   ├── app-config.yaml
-│   ├── mysql.yaml
-│   ├── redis.yaml
-│   ├── rocketmq.yaml
 │   ├── backend.yaml
 │   ├── frontend.yaml
-│   └── kustomization.yaml
-└── overlays
-    └── local
-        └── kustomization.yaml
+│   ├── kustomization.yaml
+│   ├── mysql.yaml
+│   ├── namespace.yaml
+│   ├── redis.yaml
+│   └── rocketmq.yaml
+├── overlays
+│   └── local
+│       └── kustomization.yaml
+├── local-rollout.ps1
+└── README.md
 ```
 
-基础组件：
+## 当前设计
 
-- MySQL 8.0：`StatefulSet + PVC`
-- Redis 7.2：`StatefulSet + PVC`
-- RocketMQ NameServer：`Deployment`
-- RocketMQ Broker：`StatefulSet + PVC`
-- Spring Boot Backend：`Deployment + Service`
-- Vue/Nginx Frontend：`Deployment + Service`
+本地 Kubernetes 使用一套轻量配置：
 
-默认命名空间：
+- MySQL、Redis、RocketMQ 使用临时本地存储，方便反复重建和验证 Flyway 初始化。
+- backend 启动前会等待 MySQL 可登录、Redis 可响应、RocketMQ NameServer 和 Broker 可用。
+- frontend 启动前会等待 backend 健康检查通过。
+- local overlay 使用本地镜像名 `life-service-backend` 和 `life-service-frontend`。
 
-```text
-life-service
-```
+这不是生产级 HA 配置。生产环境后续应引入持久化存储、Secret 管理、Ingress、镜像仓库 tag 策略、资源分级和监控告警。
 
-## 前置条件
+## 首次部署
 
-你需要先准备：
-
-- Docker Desktop Kubernetes、minikube、kind 或其他本地 K8s 环境
-- `kubectl`
-- 集群中存在默认 `StorageClass`
-
-检查当前上下文：
+第一次部署，或者明确需要重新应用基础设施清单时，使用 `-ApplyBase`：
 
 ```powershell
-kubectl config current-context
-kubectl get nodes
-kubectl get storageclass
+.\deploy\k8s\local-rollout.ps1 -Target all -ApplyBase
 ```
 
-## 一键部署本地 K8s 版本
+脚本会做这些事：
 
-在项目根目录执行：
+1. 构建 backend 镜像。
+2. 构建 frontend 镜像。
+3. 使用当前 Git SHA 和时间生成唯一镜像 tag。
+4. 如果当前 Kubernetes context 是 kind，自动执行 `kind load docker-image`。
+5. 应用 `deploy/k8s/overlays/local`。
+6. 对 backend/frontend 执行 `kubectl set image`。
+7. 等待 backend/frontend rollout 完成。
+
+Docker Desktop Kubernetes 通常不需要 `kind load`，因为它可以直接使用本机 Docker 镜像。
+
+## 日常滚动更新
+
+后端或前端代码变化时，不要带 `-ApplyBase`。这样脚本只会构建新镜像并滚动更新对应 Deployment，不会重建 MySQL、Redis、RocketMQ。
+
+如果当前命名空间里还存在旧版 StatefulSet 形态的基础设施，脚本会阻止 `-ApplyBase`，避免在同一个命名空间里叠出两套 MySQL、Redis 或 RocketMQ。需要从新清单完整验证时，先删除命名空间再重新部署。
+
+`-ForceApplyBase` 只用于你明确知道当前命名空间里的旧资源不会和新清单冲突的场景。普通本地验证不建议使用。
+
+### 后端变更
 
 ```powershell
-kubectl apply -k deploy/k8s/overlays/local
+.\deploy\k8s\local-rollout.ps1 -Target backend
 ```
 
-观察 Pod 状态：
+这会构建新的 backend 镜像并滚动更新 `deployment/backend`，不会重启 MySQL、Redis、RocketMQ、frontend。
+
+### 前端变更
 
 ```powershell
-kubectl -n life-service get pods -w
+.\deploy\k8s\local-rollout.ps1 -Target frontend
 ```
 
-查看 Service：
+这会构建新的 frontend 镜像并滚动更新 `deployment/frontend`，不会重启 backend 和基础设施。
+
+### 前后端都变更
 
 ```powershell
-kubectl -n life-service get svc
+.\deploy\k8s\local-rollout.ps1 -Target all
 ```
 
-## 访问前端和后端
+这会分别构建 backend/frontend 镜像，并只滚动更新两个应用 Deployment。
 
-当前没有引入 Ingress，使用 `port-forward` 访问。
+## 已经手动构建镜像时
+
+如果你已经手动构建了镜像，只想重新设置镜像，可以跳过构建：
+
+```powershell
+.\deploy\k8s\local-rollout.ps1 -Target backend -ImageTag local -SkipBuild
+```
+
+不过更推荐每次使用唯一 tag，例如：
+
+```powershell
+.\deploy\k8s\local-rollout.ps1 -Target backend -ImageTag local-backend-test-001
+```
+
+固定使用 `:local` 容易出现 Pod 重启后仍使用旧镜像的问题。唯一 tag 可以强制 Kubernetes 识别为一次新的应用版本。
+
+## 访问服务
 
 前端：
 
@@ -85,158 +117,97 @@ kubectl -n life-service get svc
 kubectl -n life-service port-forward svc/frontend 8080:80
 ```
 
-浏览器打开：
+浏览器访问：
 
 ```text
 http://localhost:8080
 ```
 
-后端健康检查：
+后端：
 
 ```powershell
 kubectl -n life-service port-forward svc/backend 8081:8081
 ```
 
-访问：
-
-```text
-http://localhost:8081/actuator/health
-```
-
-## 镜像说明
-
-`base` 默认后端和前端镜像使用 GitHub Container Registry：
-
-```text
-ghcr.io/1ike-m0on/life-service-backend:latest
-ghcr.io/1ike-m0on/life-service-frontend:latest
-```
-
-`overlays/local` 会将镜像替换为本地演示镜像：
-
-```text
-life-service-backend:local
-life-service-frontend:local
-```
-
-因此本地部署前建议先构建：
+健康检查：
 
 ```powershell
-docker compose build backend frontend
+curl.exe http://localhost:8081/actuator/health
 ```
 
-如果使用 kind，需要先把镜像加载到 kind 集群：
+## 常用检查
+
+查看 Pod：
 
 ```powershell
-kind load docker-image life-service-backend:local
-kind load docker-image life-service-frontend:local
+kubectl -n life-service get pods -o wide
 ```
 
-## 本地 Secret
+查看 Deployment 和 StatefulSet：
 
-`overlays/local` 使用 Kustomize `secretGenerator` 创建本地演示 Secret：
-
-```text
-MYSQL_ROOT_PASSWORD=root
+```powershell
+kubectl -n life-service get deploy,sts
 ```
 
-这只是本地演示默认值。生产环境不要直接使用该 Secret，后续应替换为：
+查看后端日志：
 
-- 外部 Secret 管理
-- 云厂商 Secret Manager
-- Sealed Secrets
-- External Secrets Operator
-
-## 配置映射
-
-后端运行时主要通过 `life-service-config` 注入配置：
-
-```text
-SPRING_PROFILES_ACTIVE=demo
-MYSQL_HOST=mysql
-REDIS_HOST=redis
-ROCKETMQ_NAME_SERVER=rocketmq-namesrv:9876
-ORDER_MESSAGE_PROVIDER=rocketmq
-FLASH_SALE_STARTUP_WARMUP_ENABLED=true
+```powershell
+kubectl -n life-service logs deployment/backend --tail=200
 ```
 
-这与 Docker Compose 的内部服务名保持一致，方便从 Compose 迁移到 K8s。
+查看前端日志：
 
-## 启动顺序
+```powershell
+kubectl -n life-service logs deployment/frontend --tail=100
+```
 
-Kubernetes 没有 Docker Compose 的 `depends_on`。如果后端在 MySQL 完全可连接前启动，
-Flyway 会因为拿不到数据库连接而导致 Pod 重启。
+查看 rollout：
 
-当前清单使用轻量 `initContainer` 处理启动顺序：
+```powershell
+kubectl -n life-service rollout status deployment/backend
+kubectl -n life-service rollout status deployment/frontend
+```
 
-- RocketMQ Broker 启动前等待 `rocketmq-namesrv:9876`
-- Backend 启动前等待 `mysql:3306`、`redis:6379`、`rocketmq-namesrv:9876`
-- Frontend 启动前等待 `backend:8081/actuator/health`
+查看最终渲染出的 manifest：
 
-这不是复杂的服务编排，只是为了让本地 K8s demo 启动过程更稳定。
+```powershell
+kubectl kustomize deploy/k8s/overlays/local
+```
 
-## 删除部署
+## 什么时候需要重建命名空间
 
-删除整个命名空间即可清理所有资源：
+只有这些情况建议重建：
+
+- MySQL 临时数据已经不可信。
+- Flyway migration 需要从空库重新验证。
+- backend 滚动更新失败，并且日志出现 Flyway checksum mismatch。
+- Redis 或 RocketMQ 临时状态干扰测试。
+- 基础设施 manifest 大改，例如 Service、端口、ConfigMap、Secret、存储策略调整。
+
+重建命名空间：
 
 ```powershell
 kubectl delete namespace life-service
+.\deploy\k8s\local-rollout.ps1 -Target all -ApplyBase
 ```
 
-这会同时删除 PVC 中的数据。如果你只是想重启服务，不要执行这个命令。
+因为当前使用临时本地存储，删除命名空间会清空 MySQL、Redis、RocketMQ 的本地临时数据。
 
-## 常见问题
+## 推荐开发流程
 
-### Pod 一直 Pending
+```text
+后端代码变化
+  -> .\deploy\k8s\local-rollout.ps1 -Target backend
 
-通常是本地 K8s 没有默认 StorageClass。
+前端代码变化
+  -> .\deploy\k8s\local-rollout.ps1 -Target frontend
 
-检查：
+前后端都变化
+  -> .\deploy\k8s\local-rollout.ps1 -Target all
 
-```powershell
-kubectl get storageclass
-kubectl -n life-service describe pvc
+基础设施或数据库初始化需要重测
+  -> kubectl delete namespace life-service
+  -> .\deploy\k8s\local-rollout.ps1 -Target all -ApplyBase
 ```
 
-### 后端 ImagePullBackOff
-
-说明集群拉不到 GHCR 镜像。可以：
-
-1. 确认镜像已经发布；
-2. 使用本地镜像；
-3. 为私有镜像仓库配置 `imagePullSecrets`。
-
-### 后端 CrashLoopBackOff
-
-优先检查后端日志：
-
-```powershell
-kubectl -n life-service logs deployment/backend
-```
-
-常见原因：
-
-- MySQL 还没完全 ready；
-- Secret 密码不一致；
-- Redis 或 RocketMQ 没启动；
-- Flyway 初始化失败。
-
-### RocketMQ Broker 无法连接
-
-当前 Broker 使用 Pod IP 作为 `brokerIP1`，适合本地单 Broker 验证。
-如果后续做多副本或跨节点访问，需要重新设计 Broker 暴露方式。
-
-## 当前边界
-
-当前 K8s 版本暂不包含：
-
-- Ingress / TLS
-- HPA 自动扩缩容
-- PDB
-- Prometheus Operator
-- Grafana Dashboard 自动导入
-- 外部 MySQL / Redis / RocketMQ
-- Secret 外部化管理
-- 多副本 RocketMQ 集群
-
-这些会放到后续云原生增强阶段逐步补齐。
+这样可以保证 k8s 部署不是一次性快照，而是可以随着后端和前端持续变化继续使用。

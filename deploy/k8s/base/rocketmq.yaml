@@ -6,6 +6,7 @@ metadata:
     app.kubernetes.io/name: rocketmq-namesrv
     app.kubernetes.io/part-of: life-service
 spec:
+  type: ClusterIP
   ports:
     - name: namesrv
       port: 9876
@@ -37,7 +38,8 @@ spec:
           imagePullPolicy: IfNotPresent
           command:
             - sh
-            - mqnamesrv
+            - -c
+            - sh mqnamesrv
           env:
             - name: TZ
               valueFrom:
@@ -49,6 +51,24 @@ spec:
           ports:
             - name: namesrv
               containerPort: 9876
+          startupProbe:
+            tcpSocket:
+              port: namesrv
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: namesrv
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: namesrv
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 6
           resources:
             requests:
               cpu: 100m
@@ -65,6 +85,7 @@ metadata:
     app.kubernetes.io/name: rocketmq-broker
     app.kubernetes.io/part-of: life-service
 spec:
+  type: ClusterIP
   ports:
     - name: fast
       port: 10909
@@ -79,15 +100,16 @@ spec:
     app.kubernetes.io/name: rocketmq-broker
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: rocketmq-broker
   labels:
     app.kubernetes.io/name: rocketmq-broker
     app.kubernetes.io/part-of: life-service
 spec:
-  serviceName: rocketmq-broker
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: rocketmq-broker
@@ -104,7 +126,11 @@ spec:
           command:
             - sh
             - -c
-            - until nc -z rocketmq-namesrv 9876; do echo waiting for rocketmq-namesrv; sleep 2; done
+            - |
+              until nc -z rocketmq-namesrv 9876; do
+                echo waiting for rocketmq-namesrv
+                sleep 2
+              done
       containers:
         - name: broker
           image: apache/rocketmq:5.5.0
@@ -130,7 +156,7 @@ spec:
               storePathRootDir=/home/rocketmq/store
               storePathCommitLog=/home/rocketmq/store/commitlog
               EOF
-              sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/broker.conf
+              exec sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/broker.conf
           env:
             - name: TZ
               valueFrom:
@@ -155,6 +181,24 @@ spec:
           volumeMounts:
             - name: rocketmq-store
               mountPath: /home/rocketmq/store
+          startupProbe:
+            tcpSocket:
+              port: broker
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            tcpSocket:
+              port: broker
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: broker
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 6
           resources:
             requests:
               cpu: 250m
@@ -162,12 +206,6 @@ spec:
             limits:
               cpu: "1"
               memory: 1024Mi
-  volumeClaimTemplates:
-    - metadata:
-        name: rocketmq-store
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 4Gi
+      volumes:
+        - name: rocketmq-store
+          emptyDir: {}
