@@ -22,6 +22,14 @@ public class AuthConfiguration implements WebMvcConfigurer {
                         "/api/v1/auth/me",
                         "/api/v1/auth/logout",
                         "/api/v1/flash-sale-vouchers/*/orders",
+                        "/api/v1/users/me/notes",
+                        "/api/v1/users/me/notes/*",
+                        "/api/v1/users/me/notes/*/comments",
+                        "/api/v1/users/me/notes/*/favorite",
+                        "/api/v1/users/me/note-comments/*",
+                        "/api/v1/users/me/favorite-notes",
+                        "/api/v1/users/me/voucher-orders",
+                        "/api/v1/voucher-orders/*",
                         "/api/v1/voucher-orders/*/payment");
     }
 }
