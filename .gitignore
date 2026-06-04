@@ -3,6 +3,8 @@ target/
 .m2/
 docs/
 .ai/
+.agents/
+AGENTS.md
 tmp/
 frontend/node_modules/
 frontend/dist/
