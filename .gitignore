@@ -2,6 +2,8 @@ HELP.md
 target/
 .m2/
 docs/
+.ai/
+tmp/
 frontend/node_modules/
 frontend/dist/
 tests/load/jmeter/data/*.csv
