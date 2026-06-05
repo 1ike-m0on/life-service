@@ -138,7 +138,7 @@ a {
 
 @media (max-width: 1024px) {
   .page {
-    width: min(100% - 32px, var(--content-width));
+    width: min(calc(100vw - 32px), var(--content-width));
   }
 
   .page-grid {
@@ -152,7 +152,7 @@ a {
 
 @media (max-width: 720px) {
   .page {
-    width: min(100% - 24px, var(--content-width));
+    width: min(calc(100vw - 24px), var(--content-width));
     padding-top: 18px;
   }
 

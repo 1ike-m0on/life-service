@@ -12,27 +12,21 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { merchantFallbackImages, merchantGalleryImages } from '@/utils/merchantImages';
 
 const props = defineProps<{
   src?: string | null;
   alt: string;
+  seed?: number;
 }>();
 
-const fallbackImages = [
-  '/assets/merchant-coffee.svg',
-  '/assets/merchant-hotpot.svg',
-  '/assets/merchant-bakery.svg',
-  '/assets/merchant-sushi.svg',
-];
-
 const images = computed(() => {
-  const parsed = props.src?.split(',').map((item) => item.trim()).filter(Boolean) || [];
-  return parsed.length > 0 ? parsed.slice(0, 5) : fallbackImages;
+  return merchantGalleryImages(props.src, props.seed || 0, 5);
 });
 
 function useFallbackImage(event: Event, index: number) {
   const image = event.target as HTMLImageElement;
-  const fallbackImage = fallbackImages[index % fallbackImages.length];
+  const fallbackImage = merchantFallbackImages(props.seed || 0, 5)[index % 5];
   if (image.src.endsWith(fallbackImage)) {
     return;
   }

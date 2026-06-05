@@ -2,19 +2,38 @@
   <main class="page">
     <section class="orders-head">
       <div>
-        <span class="state-chip">最近订单</span>
-        <h1>抢券后的订单反馈</h1>
-        <p>当前先记录本地最近订单，用来串起抢券和模拟支付体验。</p>
+        <span class="state-chip">我的订单</span>
+        <h1>团购券、秒杀券和到店消费状态</h1>
+        <p>下单后可以继续支付、回到商户详情，或查看当前订单状态。</p>
       </div>
       <RouterLink class="primary-link" to="/merchants">继续浏览商户</RouterLink>
     </section>
 
-    <section class="section page-grid">
+    <section v-if="!authStore.isLoggedIn" class="section">
+      <EmptyState title="登录后查看订单" description="邮箱登录后，可以同步查看后端保存的订单状态。">
+        <RouterLink class="empty-link" to="/login?redirect=/orders">去登录</RouterLink>
+      </EmptyState>
+    </section>
+
+    <section v-else class="section page-grid">
       <div>
+        <div class="order-tabs">
+          <button
+            v-for="tab in statusTabs"
+            :key="tab.label"
+            type="button"
+            :class="{ active: selectedStatus === tab.value }"
+            @click="selectStatus(tab.value)"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <van-skeleton v-if="orderStore.loading" title :row="8" />
         <EmptyState
-          v-if="orderStore.recentOrders.length === 0"
-          title="暂无最近订单"
-          description="进入商户详情抢券后，订单会出现在这里。"
+          v-else-if="orderStore.recentOrders.length === 0"
+          title="暂无订单"
+          description="购买团购券或秒杀券后，订单会出现在这里。"
         >
           <RouterLink class="empty-link" to="/merchants">去浏览商户</RouterLink>
         </EmptyState>
@@ -54,7 +73,7 @@
                 :loading="payingOrderNo === order.orderNo"
                 @click="pay(order.orderNo)"
               >
-                模拟支付
+                支付
               </van-button>
               <van-button plain size="small" :to="`/merchants/${order.merchantId}`">查看商户</van-button>
               <van-button plain size="small" @click="showTodo">订单详情</van-button>
@@ -67,11 +86,11 @@
       <aside class="sidebar">
         <section class="side-card">
           <h3>订单说明</h3>
-          <p>后端还没有完整订单查询接口，所以这里展示的是前端本地最近订单。服务端最终状态以后续订单查询接口为准。</p>
+          <p>待支付订单可以继续支付，已关闭或处理失败会显示原因。支付、关单和库存释放的并发处理由后端保证。</p>
         </section>
         <section class="side-card side-card--soft">
-          <h3>未完成能力</h3>
-          <p>订单详情、退款、评价等能力暂不实现。点击后会统一提示功能未完成。</p>
+          <h3>后续服务</h3>
+          <p>订单详情、退款、评价发布会在后续版本继续完善，目前先保留入口并展示友好的未完成提示。</p>
         </section>
         <button
           v-if="orderStore.recentOrders.length > 0"
@@ -79,7 +98,7 @@
           class="clear-button"
           @click="orderStore.clearOrders()"
         >
-          清空本地订单
+          清空本地缓存
         </button>
       </aside>
     </section>
@@ -87,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 import { showFailToast, showSuccessToast, showToast } from 'vant';
 import EmptyState from '@/components/EmptyState.vue';
@@ -97,18 +116,50 @@ import { friendlyMessage, todoMessage } from '@/utils/format';
 import { formatCent } from '@/utils/money';
 import { isApiBusinessError } from '@/types/api';
 import { formatDateTime } from '@/utils/time';
+import { useAuthStore } from '@/stores/auth';
 
 const orderStore = useOrderStore();
+const authStore = useAuthStore();
 const payingOrderNo = ref('');
+const selectedStatus = ref<number | null>(null);
+
+const statusTabs = [
+  { label: '全部', value: null },
+  { label: '待支付', value: 1 },
+  { label: '已支付', value: 2 },
+  { label: '已关闭', value: 3 },
+];
+
+onMounted(() => {
+  if (authStore.isLoggedIn) {
+    refreshOrders();
+  }
+});
+
+async function refreshOrders() {
+  try {
+    await orderStore.loadMyOrders(selectedStatus.value);
+  } catch (error) {
+    const message = isApiBusinessError(error) ? friendlyMessage(error.code, error.message) : '订单加载失败';
+    showFailToast(message);
+  }
+}
+
+function selectStatus(status: number | null) {
+  selectedStatus.value = status;
+  refreshOrders();
+}
 
 async function pay(orderNo: string) {
   payingOrderNo.value = orderNo;
   try {
     const result = await orderStore.pay(orderNo);
     showSuccessToast(result.data.idempotent ? '订单已支付' : '支付成功');
+    refreshOrders();
   } catch (error) {
     const message = isApiBusinessError(error) ? friendlyMessage(error.code, error.message) : '支付失败';
-    orderStore.markFailed(orderNo, message, isApiBusinessError(error) && error.code === 'ORDER_CLOSED' ? 'CLOSED' : 'FAILED');
+    const failedStatus = isApiBusinessError(error) && error.code === 'ORDER_CLOSED' ? 'CLOSED' : 'FAILED';
+    orderStore.markFailed(orderNo, message, failedStatus);
     showFailToast(message);
   } finally {
     payingOrderNo.value = '';
@@ -159,6 +210,29 @@ p {
 
 .empty-link {
   margin-top: 18px;
+}
+
+.order-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.order-tabs button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--neutral-line);
+  border-radius: var(--radius-pill);
+  background: var(--neutral-surface);
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.order-tabs button.active {
+  border-color: oklch(0.84 0.09 58);
+  background: var(--brand-orange-soft);
+  color: var(--brand-orange-deep);
 }
 
 .order-list {

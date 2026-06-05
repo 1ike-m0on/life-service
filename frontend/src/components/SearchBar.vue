@@ -10,7 +10,7 @@
       <input
         :value="modelValue"
         type="search"
-        placeholder="搜索商户名、地点、分类"
+        placeholder="搜索店名、菜品、目的地"
         @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       />
     </label>

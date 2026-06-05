@@ -8,7 +8,7 @@
 
     <div class="voucher-ticket__main">
       <div class="voucher-ticket__head">
-        <span class="voucher-ticket__type">{{ isFlashSale ? '秒杀券' : '代金券' }}</span>
+        <span class="voucher-ticket__type">{{ isFlashSale ? '限时秒杀' : '到店代金券' }}</span>
         <span class="voucher-ticket__discount">{{ discountLabel(voucher.payAmountCent, voucher.discountAmountCent) }}</span>
       </div>
       <h3>{{ voucher.title }}</h3>
@@ -21,9 +21,9 @@
 
     <div class="voucher-ticket__action">
       <button type="button" :disabled="loading" @click="$emit('claim', voucher)">
-        {{ loading ? '处理中' : isFlashSale ? '抢购' : '领取' }}
+        {{ loading ? '处理中' : isFlashSale ? '抢券' : '查看' }}
       </button>
-      <small>{{ isFlashSale ? '限时开放' : '功能未完成' }}</small>
+      <small>{{ isFlashSale ? '成功后生成订单' : '到店可用' }}</small>
     </div>
   </article>
 </template>
@@ -52,7 +52,7 @@ const isFlashSale = computed(() => props.voucher.type === 2);
   gap: 14px;
   align-items: stretch;
   padding: 12px;
-  border: 1px solid rgba(255, 102, 51, 0.13);
+  border: 1px solid oklch(0.84 0.09 58 / 0.36);
   border-radius: var(--radius-md);
   background: var(--voucher-wash);
 }

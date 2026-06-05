@@ -1,6 +1,6 @@
 import { request } from './client';
-import { PageResponse } from '@/types/api';
-import { Merchant, MerchantCategory } from '@/types/merchant';
+import type { PageResponse } from '@/types/api';
+import type { Merchant, MerchantCategory } from '@/types/merchant';
 
 export function listCategories() {
   return request<MerchantCategory[]>({

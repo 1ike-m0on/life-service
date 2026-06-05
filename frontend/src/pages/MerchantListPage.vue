@@ -2,9 +2,9 @@
   <main class="page">
     <section class="list-head">
       <div>
-        <span class="state-chip">商户发现</span>
+        <span class="state-chip">附近好店</span>
         <h1>{{ pageTitle }}</h1>
-        <p>按分类、关键词、人气和评分浏览附近好店。</p>
+        <p>把评分、评价数、人均和场景放在一起看，先比较再决定去哪家。</p>
       </div>
       <SearchBar v-model="keywordInput" @search="applySearch" />
     </section>
@@ -50,7 +50,7 @@
         <EmptyState
           v-else-if="sortedMerchants.length === 0"
           title="没有找到匹配商户"
-          description="换个关键词或分类再试试"
+          description="换个关键词或分类再试试。"
         />
         <div v-else class="merchant-list">
           <MerchantCard
@@ -64,13 +64,12 @@
 
       <aside class="sidebar">
         <section class="side-card">
-          <h3>筛选说明</h3>
-          <p>分类和关键词会请求后端接口。人气、评分是当前页本地排序。距离需要定位能力，首版先提示功能未完成。</p>
+          <h3>怎么挑更快</h3>
+          <p>晚餐看人气和评价数，约会看评分和环境，工作日午餐优先看区域和人均。</p>
         </section>
-        <section class="side-card side-card--voucher">
-          <span class="state-chip state-chip--danger">限时券</span>
-          <h3>进入商户详情抢券</h3>
-          <p>秒杀入口在商户详情页。活动未准备好时，页面会提示稍后再试。</p>
+        <section class="side-card side-card--soft">
+          <h3>浏览建议</h3>
+          <p>看到合适的店可以先进入详情页看图集、到店笔记和营业信息。</p>
         </section>
       </aside>
     </section>
@@ -85,10 +84,9 @@ import SearchBar from '@/components/SearchBar.vue';
 import MerchantCard from '@/components/MerchantCard.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import { listCategories, pageMerchants } from '@/api/merchant';
-import { Merchant, MerchantCategory } from '@/types/merchant';
-import { todoMessage } from '@/utils/format';
+import type { Merchant, MerchantCategory } from '@/types/merchant';
 
-type SortMode = 'default' | 'popular' | 'score' | 'distance';
+type SortMode = 'default' | 'popular' | 'score' | 'price';
 
 const route = useRoute();
 const router = useRouter();
@@ -100,10 +98,10 @@ const keywordInput = ref(String(route.query.keyword || ''));
 const sortMode = ref<SortMode>('default');
 
 const sortOptions: Array<{ label: string; value: SortMode }> = [
-  { label: '默认', value: 'default' },
-  { label: '距离', value: 'distance' },
-  { label: '人气', value: 'popular' },
-  { label: '评分', value: 'score' },
+  { label: '综合排序', value: 'default' },
+  { label: '人气优先', value: 'popular' },
+  { label: '好评优先', value: 'score' },
+  { label: '人均从低', value: 'price' },
 ];
 
 const pageTitle = computed(() => {
@@ -119,6 +117,9 @@ const sortedMerchants = computed(() => {
   }
   if (sortMode.value === 'score') {
     return list.sort((left, right) => right.score - left.score);
+  }
+  if (sortMode.value === 'price') {
+    return list.sort((left, right) => left.avgPriceCent - right.avgPriceCent);
   }
   return list;
 });
@@ -145,7 +146,7 @@ async function loadCategories() {
   try {
     categories.value = (await listCategories()).data;
   } catch {
-    showToast('功能未完成，请稍后再试');
+    showToast('分类暂时没有加载出来，请稍后再试');
   }
 }
 
@@ -161,7 +162,7 @@ async function loadMerchants() {
     merchants.value = result.data.records;
   } catch {
     merchants.value = [];
-    showToast('功能未完成，请稍后再试');
+    showToast('商户暂时没有加载出来，请稍后再试');
   } finally {
     loading.value = false;
   }
@@ -188,10 +189,6 @@ function applySearch(value = keywordInput.value) {
 }
 
 function handleSort(mode: SortMode) {
-  if (mode === 'distance') {
-    showToast(todoMessage());
-    return;
-  }
   sortMode.value = mode;
 }
 
@@ -208,10 +205,8 @@ function openMerchant(id: number) {
   align-items: end;
   padding: 28px;
   border: 1px solid var(--neutral-line);
-  border-radius: var(--radius-md);
-  background:
-    linear-gradient(135deg, rgba(255, 241, 235, 0.92), rgba(255, 253, 251, 0.96)),
-    var(--neutral-surface);
+  border-radius: 12px;
+  background: var(--neutral-surface);
   box-shadow: var(--shadow-panel);
 }
 
@@ -233,7 +228,7 @@ p {
   margin-bottom: 16px;
   padding: 14px;
   border: 1px solid var(--neutral-line);
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   background: var(--neutral-surface);
 }
 
@@ -272,22 +267,17 @@ p {
 .side-card {
   padding: 18px;
   border: 1px solid var(--neutral-line);
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   background: var(--neutral-surface);
-  box-shadow: var(--shadow-panel);
 }
 
-.side-card--voucher {
-  background: var(--voucher-wash);
+.side-card--soft {
+  background: var(--brand-orange-soft);
 }
 
 .side-card h3 {
   margin: 0 0 8px;
   font-size: 18px;
-}
-
-.side-card .state-chip + h3 {
-  margin-top: 12px;
 }
 
 @media (max-width: 1024px) {

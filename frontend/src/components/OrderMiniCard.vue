@@ -12,7 +12,7 @@
 
 <script setup lang="ts">
 import OrderStatusBadge from './OrderStatusBadge.vue';
-import { RecentOrder } from '@/types/order';
+import type { RecentOrder } from '@/types/order';
 
 defineProps<{
   order: RecentOrder;

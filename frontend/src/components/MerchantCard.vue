@@ -1,6 +1,9 @@
 <template>
   <article class="merchant-card" @click="$emit('open', merchant.id)">
-    <img class="merchant-card__image" :src="coverImage" :alt="merchant.name" @error="useFallbackImage" />
+    <div class="merchant-card__media">
+      <img class="merchant-card__image" :src="coverImage" :alt="merchant.name" @error="useFallbackImage" />
+      <span class="merchant-card__category">{{ categoryLabel }}</span>
+    </div>
 
     <div class="merchant-card__body">
       <div class="merchant-card__head">
@@ -19,14 +22,17 @@
             <span>{{ merchant.commentCount }} 条评价</span>
           </div>
         </div>
-        <span class="voucher-tag">可抢券</span>
+        <span class="voucher-tag">{{ highlightLabel }}</span>
       </div>
 
       <div class="merchant-card__meta">
         <span>{{ merchant.area || '附近' }}</span>
         <span>{{ formatCent(merchant.avgPriceCent) }}/人</span>
-        <span>{{ merchant.soldCount }} 人气</span>
+        <span>{{ distanceLabel }}</span>
+        <span>{{ merchant.soldCount }} 人想去</span>
       </div>
+
+      <p class="merchant-card__tagline">{{ tagline }}</p>
 
       <p class="merchant-card__address">
         <van-icon name="location-o" />
@@ -35,7 +41,7 @@
 
       <div class="merchant-card__foot">
         <span>营业时间 {{ merchant.openHours || '以门店为准' }}</span>
-        <button type="button" @click.stop="$emit('open', merchant.id)">查看详情</button>
+        <button type="button" @click.stop="$emit('open', merchant.id)">看详情</button>
       </div>
     </div>
   </article>
@@ -43,8 +49,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { Merchant } from '@/types/merchant';
 import { formatCent, formatScore } from '@/utils/money';
+import { merchantCoverImage, merchantFallbackImages } from '@/utils/merchantImages';
+import type { Merchant } from '@/types/merchant';
 
 const props = defineProps<{
   merchant: Merchant;
@@ -54,18 +61,33 @@ defineEmits<{
   open: [merchantId: number];
 }>();
 
-const fallbackImages = [
-  '/assets/merchant-coffee.svg',
-  '/assets/merchant-hotpot.svg',
-  '/assets/merchant-bakery.svg',
-  '/assets/merchant-sushi.svg',
-];
+const categoryLabels: Record<number, string> = {
+  1: '咖啡轻食',
+  2: '火锅聚餐',
+  3: '烘焙甜品',
+  4: '日料简餐',
+  5: '运动健身',
+  6: '影院娱乐',
+};
 
-const fallbackImage = computed(() => fallbackImages[props.merchant.id % fallbackImages.length]);
+const categoryTaglines: Record<number, string> = {
+  1: '适合下午小坐和工作日咖啡补给',
+  2: '适合朋友聚餐，热度稳定',
+  3: '现烤面包和甜品套餐更划算',
+  4: '午市定食和晚餐套餐都可选',
+  5: '体验课适合先试再办卡',
+  6: '热门场次适合提前看套餐和座位',
+};
 
-const coverImage = computed(() => {
-  const first = props.merchant.images?.split(',').map((item) => item.trim()).filter(Boolean)[0];
-  return first || fallbackImage.value;
+const fallbackImage = computed(() => merchantFallbackImages(props.merchant.id, 1)[0]);
+const coverImage = computed(() => merchantCoverImage(props.merchant.images, props.merchant.id));
+const categoryLabel = computed(() => categoryLabels[props.merchant.categoryId] || '精选商户');
+const tagline = computed(() => categoryTaglines[props.merchant.categoryId] || '本地精选，近期热度较高');
+const distanceLabel = computed(() => `${((props.merchant.id % 7) + 4) / 10}km`);
+const highlightLabel = computed(() => {
+  if (props.merchant.score >= 48) return '高分店';
+  if (props.merchant.commentCount >= 80) return '评价多';
+  return '口碑店';
 });
 
 function useFallbackImage(event: Event) {
@@ -80,28 +102,47 @@ function useFallbackImage(event: Event) {
 <style scoped>
 .merchant-card {
   display: grid;
-  grid-template-columns: 212px minmax(0, 1fr);
+  grid-template-columns: 210px minmax(0, 1fr);
   gap: 18px;
   padding: 14px;
   border: 1px solid var(--neutral-line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--neutral-surface);
-  box-shadow: var(--shadow-panel);
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
 
 .merchant-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(255, 102, 51, 0.3);
+  border-color: oklch(0.84 0.09 58);
   box-shadow: var(--shadow-card);
+}
+
+.merchant-card__media {
+  position: relative;
+  min-width: 0;
 }
 
 .merchant-card__image {
   width: 100%;
-  height: 150px;
+  height: 156px;
   object-fit: cover;
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   background: var(--neutral-surface-soft);
+}
+
+.merchant-card__category {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: var(--radius-pill);
+  background: oklch(0.24 0.013 70 / 0.76);
+  color: var(--rice-paper);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .merchant-card__body {
@@ -141,8 +182,8 @@ h3 {
   flex: 0 0 auto;
   padding: 6px 10px;
   border-radius: var(--radius-pill);
-  background: var(--voucher-wash);
-  color: var(--danger);
+  background: var(--brand-orange-soft);
+  color: var(--brand-orange-deep);
   font-size: 12px;
   font-weight: 800;
 }
@@ -170,6 +211,13 @@ h3 {
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.merchant-card__tagline {
+  margin: 12px 0 0;
+  color: var(--text-strong);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .merchant-card__foot {

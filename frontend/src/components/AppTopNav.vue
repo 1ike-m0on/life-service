@@ -5,35 +5,54 @@
         <span class="brand__mark">LS</span>
         <span>
           <strong>Life Service</strong>
-          <small>本地生活</small>
+          <small>本地好店</small>
         </span>
       </RouterLink>
 
+      <button type="button" class="city-button" @click="showTodo">
+        <van-icon name="location-o" />
+        杭州
+        <van-icon name="arrow-down" />
+      </button>
+
+      <form class="nav-search" @submit.prevent="search">
+        <input v-model.trim="keyword" placeholder="搜索店名、菜品、目的地" />
+        <button type="submit" aria-label="搜索">
+          <van-icon name="search" />
+        </button>
+      </form>
+
       <nav class="nav-links" aria-label="主导航">
         <RouterLink to="/">首页</RouterLink>
-        <RouterLink to="/merchants">商户</RouterLink>
+        <RouterLink to="/merchants">找好店</RouterLink>
         <RouterLink to="/orders">订单</RouterLink>
         <RouterLink to="/me">我的</RouterLink>
       </nav>
 
-      <div class="top-nav__actions">
-        <button type="button" class="link-button" @click="showTodo">消息</button>
-        <RouterLink v-if="!authStore.isLoggedIn" class="login-button" to="/login">登录</RouterLink>
-        <RouterLink v-else class="user-pill" to="/me">
-          {{ authStore.currentUser?.nickname || authStore.currentUser?.email || '我的账号' }}
-        </RouterLink>
-      </div>
+      <RouterLink v-if="!authStore.isLoggedIn" class="login-button" to="/login">
+        登录
+      </RouterLink>
+      <RouterLink v-else class="user-pill" to="/me">
+        {{ authStore.currentUser?.nickname || authStore.currentUser?.email || '我的账号' }}
+      </RouterLink>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import { RouterLink } from 'vue-router';
+import { ref } from 'vue';
+import { RouterLink, useRouter } from 'vue-router';
 import { showToast } from 'vant';
 import { useAuthStore } from '@/stores/auth';
 import { todoMessage } from '@/utils/format';
 
 const authStore = useAuthStore();
+const router = useRouter();
+const keyword = ref('');
+
+function search() {
+  router.push({ path: '/merchants', query: { keyword: keyword.value || undefined } });
+}
 
 function showTodo() {
   showToast(todoMessage());
@@ -46,37 +65,36 @@ function showTodo() {
   top: 0;
   z-index: 20;
   border-bottom: 1px solid var(--neutral-line);
-  background: rgba(255, 253, 251, 0.96);
-  backdrop-filter: blur(10px);
+  background: oklch(0.995 0.008 82 / 0.98);
 }
 
 .top-nav__inner {
-  width: min(var(--content-width), calc(100vw - 48px));
-  min-height: 64px;
-  margin: 0 auto;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto minmax(260px, 420px) minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 28px;
+  gap: 18px;
+  width: min(var(--content-width), calc(100vw - 48px));
+  min-height: 68px;
+  margin: 0 auto;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-width: 190px;
+  gap: 8px;
+  min-width: 164px;
 }
 
 .brand__mark {
-  width: 36px;
-  height: 36px;
   display: inline-grid;
   place-items: center;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   background: var(--brand-orange);
   color: var(--neutral-surface);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .brand strong,
@@ -85,51 +103,87 @@ function showTodo() {
 }
 
 .brand strong {
-  font-size: 17px;
-  line-height: 1.1;
+  color: var(--text-strong);
+  font-size: 20px;
+  line-height: 1;
 }
 
 .brand small {
-  margin-top: 2px;
+  margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.city-button,
+.nav-search button,
+.login-button,
+.user-pill {
+  border: 0;
+  background: transparent;
+}
+
+.city-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.city-button .van-icon:first-child {
+  color: var(--brand-orange);
+  font-size: 20px;
+}
+
+.nav-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  height: 40px;
+  overflow: hidden;
+  border: 1px solid oklch(0.84 0.09 62);
+  border-radius: 999px;
+  background: var(--neutral-surface);
+}
+
+.nav-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 0 16px 0 20px;
+  background: transparent;
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.nav-search input::placeholder {
+  color: oklch(0.68 0.025 70);
+}
+
+.nav-search button {
+  display: grid;
+  place-items: center;
+  color: var(--brand-orange-deep);
+  font-size: 19px;
 }
 
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex: 1;
-}
-
-.nav-links a,
-.link-button {
-  min-height: 36px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 14px;
-  font-weight: 700;
+  justify-content: flex-end;
+  gap: 24px;
 }
 
 .nav-links a {
-  display: inline-flex;
-  align-items: center;
+  color: var(--text-muted);
+  font-size: 14px;
+  white-space: nowrap;
 }
 
 .nav-links a.router-link-active {
-  background: var(--brand-orange-soft);
   color: var(--brand-orange-deep);
-}
-
-.top-nav__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  min-width: 220px;
+  font-weight: 800;
 }
 
 .login-button,
@@ -137,9 +191,10 @@ function showTodo() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
-  padding: 0 16px;
-  border-radius: var(--radius-pill);
+  min-width: 92px;
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: 999px;
   background: var(--brand-orange);
   color: var(--neutral-surface);
   font-size: 14px;
@@ -147,30 +202,45 @@ function showTodo() {
 }
 
 .user-pill {
-  max-width: 190px;
+  max-width: 168px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 1024px) {
   .top-nav__inner {
-    width: min(100% - 24px, var(--content-width));
-    min-height: auto;
-    padding: 12px 0;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-
-  .brand,
-  .top-nav__actions {
-    min-width: 0;
+    grid-template-columns: auto auto minmax(220px, 1fr) auto;
   }
 
   .nav-links {
-    order: 3;
-    width: 100%;
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    padding-bottom: 12px;
+  }
+}
+
+@media (max-width: 720px) {
+  .top-nav__inner {
+    width: min(calc(100vw - 24px), var(--content-width));
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    padding: 12px 0;
+  }
+
+  .top-nav__inner > * {
+    min-width: 0;
+  }
+
+  .city-button,
+  .nav-search,
+  .nav-links {
+    grid-column: 1 / -1;
+  }
+
+  .nav-links {
     overflow-x: auto;
+    padding-bottom: 0;
   }
 }
 </style>
