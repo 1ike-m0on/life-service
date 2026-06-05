@@ -5,7 +5,7 @@
     <template v-else-if="merchant">
       <div class="detail-title">
         <div>
-          <RouterLink class="back-link" to="/merchants">返回商户列表</RouterLink>
+          <RouterLink class="back-link" to="/merchants">返回找好店</RouterLink>
           <h1>{{ merchant.name }}</h1>
           <div class="rating-line">
             <van-rate
@@ -21,18 +21,18 @@
             <span>{{ merchant.soldCount }} 人气</span>
           </div>
         </div>
-        <button type="button" class="share-button" @click="showTodo">分享</button>
+        <button type="button" class="share-button" @click="showTodo">收藏店铺</button>
       </div>
 
       <section class="page-grid detail-grid">
         <div class="detail-main">
           <section class="card detail-card">
-            <MerchantImageStrip :src="merchant.images" :alt="merchant.name" />
+            <MerchantImageStrip :src="merchant.images" :alt="merchant.name" :seed="merchant.id" />
 
             <div class="merchant-info">
               <div class="rank-row">
                 <span class="rank-badge">口碑好店</span>
-                <span>{{ merchant.area || '附近' }}高分商户，适合聚餐和休闲小坐</span>
+                <span>{{ merchant.area || '附近' }}高分商户，近期评价热度稳定</span>
               </div>
 
               <div class="score-grid">
@@ -71,24 +71,20 @@
           <section class="section card comments-card">
             <div class="section-title">
               <div>
-                <h2>网友评价</h2>
-                <p>评论能力后续补齐，当前展示用户端占位结构。</p>
+                <h2>到店笔记</h2>
+                <p>看看最近去过的人怎么评价环境、出品和排队情况。</p>
               </div>
               <button type="button" class="plain-link" @click="showTodo">查看全部</button>
             </div>
-            <div class="comment-tags">
-              <button type="button" @click="showTodo">味道不错</button>
-              <button type="button" @click="showTodo">环境舒服</button>
-              <button type="button" @click="showTodo">适合朋友聚餐</button>
-              <button type="button" @click="showTodo">服务热情</button>
+            <div v-if="merchantNotes.length > 0" class="merchant-notes">
+              <LifeNoteCard
+                v-for="note in merchantNotes"
+                :key="note.id"
+                :note="note"
+                @open-note="openRelatedNote"
+              />
             </div>
-            <div class="comment-placeholder">
-              <div class="avatar" />
-              <div>
-                <strong>本地生活用户</strong>
-                <p>这部分会在评论接口完成后接入真实数据，目前点击评论相关入口会提示功能未完成。</p>
-              </div>
-            </div>
+            <EmptyState v-else title="暂无到店笔记" description="后续用户发布的评价会展示在这里。" />
           </section>
         </div>
 
@@ -96,15 +92,15 @@
           <section class="voucher-panel">
             <div class="section-title">
               <div>
-                <h2>代金券</h2>
-                <p>{{ flashSaleCount }} 张秒杀券，以后端活动状态为准。</p>
+                <h2>团购与代金券</h2>
+                <p>{{ vouchers.length }} 个可选优惠，下单后可在订单页查看状态。</p>
               </div>
             </div>
 
             <EmptyState
               v-if="vouchers.length === 0"
-              title="暂无优惠券"
-              description="商户暂未配置优惠券"
+              title="暂无可选优惠"
+              description="可以先收藏店铺，稍后再回来看看。"
             />
             <div v-else class="voucher-list">
               <VoucherTicket
@@ -119,7 +115,7 @@
 
           <section v-if="lastMessage || merchantLastOrder" class="result-panel">
             <span class="state-chip" :class="{ 'state-chip--danger': lastError }">
-              {{ lastError ? '业务反馈' : '订单反馈' }}
+              {{ lastError ? '购买反馈' : '订单状态' }}
             </span>
             <h3>{{ lastMessage || '最近订单待支付' }}</h3>
             <p v-if="merchantLastOrder">订单号 {{ merchantLastOrder.orderNo }}</p>
@@ -130,35 +126,42 @@
               :loading="paying"
               @click="pay(merchantLastOrder.orderNo)"
             >
-              模拟支付
+              支付
             </van-button>
-            <RouterLink class="orders-link" to="/orders">查看最近订单</RouterLink>
+            <RouterLink class="orders-link" to="/orders">查看我的订单</RouterLink>
           </section>
         </aside>
       </section>
     </template>
 
-    <EmptyState v-else title="商户不存在" description="请返回列表重新选择商户" />
+    <EmptyState v-else title="商户不存在" description="请返回列表重新选择商户。" />
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import { showFailToast, showSuccessToast, showToast } from 'vant';
 import MerchantImageStrip from '@/components/MerchantImageStrip.vue';
 import VoucherTicket from '@/components/VoucherTicket.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import LifeNoteCard from '@/components/LifeNoteCard.vue';
 import { getMerchant } from '@/api/merchant';
 import { listMerchantVouchers } from '@/api/voucher';
 import { createFlashSaleOrder } from '@/api/order';
-import { Merchant } from '@/types/merchant';
-import { Voucher } from '@/types/voucher';
-import { ApiBusinessError, isApiBusinessError } from '@/types/api';
+import { pageMerchantNotes } from '@/api/note';
+import { isApiBusinessError } from '@/types/api';
 import { formatScore } from '@/utils/money';
 import { friendlyMessage, todoMessage } from '@/utils/format';
 import { useAuthStore } from '@/stores/auth';
 import { useOrderStore } from '@/stores/order';
+import { notesForMerchant } from '@/data/lifeNotes';
+import { lifeNoteToView, noteCardToView } from '@/utils/noteView';
+import { merchantGalleryImages } from '@/utils/merchantImages';
+import type { ApiBusinessError } from '@/types/api';
+import type { Merchant } from '@/types/merchant';
+import type { Voucher } from '@/types/voucher';
+import type { NoteView } from '@/utils/noteView';
 
 const route = useRoute();
 const router = useRouter();
@@ -167,6 +170,7 @@ const orderStore = useOrderStore();
 
 const merchant = ref<Merchant | null>(null);
 const vouchers = ref<Voucher[]>([]);
+const merchantNotes = ref<NoteView[]>([]);
 const loading = ref(false);
 const claimingVoucherId = ref<number | null>(null);
 const paying = ref(false);
@@ -174,19 +178,22 @@ const lastMessage = ref('');
 const lastError = ref(false);
 
 const merchantId = computed(() => Number(route.params.id));
-const flashSaleCount = computed(() => vouchers.value.filter((voucher) => voucher.type === 2).length);
 const merchantLastOrder = computed(() => (
   orderStore.recentOrders.find((order) => order.merchantId === merchantId.value) || null
 ));
 
 onMounted(loadDetail);
+watch(merchantId, loadDetail);
 
 async function loadDetail() {
   loading.value = true;
+  lastMessage.value = '';
+  lastError.value = false;
   try {
-    const [merchantResult, voucherResult] = await Promise.allSettled([
+    const [merchantResult, voucherResult, noteResult] = await Promise.allSettled([
       getMerchant(merchantId.value),
       listMerchantVouchers(merchantId.value),
+      pageMerchantNotes(merchantId.value, { pageNo: 1, pageSize: 8 }),
     ]);
 
     if (merchantResult.status === 'fulfilled') {
@@ -195,8 +202,16 @@ async function loadDetail() {
     if (voucherResult.status === 'fulfilled') {
       vouchers.value = voucherResult.value.data;
     }
+    if (noteResult.status === 'fulfilled') {
+      merchantNotes.value = noteResult.value.data.records.map(noteCardToView);
+    } else {
+      merchantNotes.value = notesForMerchant(merchantId.value).map(lifeNoteToView);
+    }
+    if (authStore.isLoggedIn) {
+      orderStore.loadMyOrders().catch(() => undefined);
+    }
     if (merchantResult.status === 'rejected' || voucherResult.status === 'rejected') {
-      showToast('功能未完成，请稍后再试');
+      showToast('部分详情暂时没有加载完整');
     }
   } finally {
     loading.value = false;
@@ -205,11 +220,11 @@ async function loadDetail() {
 
 async function claimVoucher(voucher: Voucher) {
   if (voucher.type !== 2) {
-    showToast(todoMessage());
+    showToast('到店出示即可使用');
     return;
   }
   if (!authStore.isLoggedIn) {
-    showToast('请先登录');
+    showToast('登录后可继续购买');
     router.push({ path: '/login', query: { redirect: route.fullPath } });
     return;
   }
@@ -223,13 +238,16 @@ async function claimVoucher(voucher: Voucher) {
       orderNo: result.data,
       voucherId: voucher.id,
       voucherTitle: voucher.title,
+      voucherSubtitle: voucher.subtitle,
       merchantId: merchant.value?.id || voucher.merchantId,
       merchantName: merchant.value?.name || 'Life Service 商户',
+      merchantImages: merchantGalleryImages(merchant.value?.images, merchant.value?.id || voucher.merchantId, 3),
       payAmountCent: voucher.payAmountCent,
       statusCode: 1,
+      message: '下单成功，等待支付',
     });
-    lastMessage.value = '抢购成功，订单待支付';
-    showSuccessToast('抢购成功');
+    lastMessage.value = '下单成功，订单待支付';
+    showSuccessToast('下单成功');
   } catch (error) {
     const known: ApiBusinessError | null = isApiBusinessError(error) ? error : null;
     lastError.value = true;
@@ -264,6 +282,10 @@ async function pay(orderNo: string) {
 
 function showTodo() {
   showToast(todoMessage());
+}
+
+function openRelatedNote(id: number) {
+  router.push(`/notes/${id}`);
 }
 </script>
 
@@ -402,42 +424,9 @@ h1 {
   padding: 18px;
 }
 
-.comment-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.comment-tags button {
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid rgba(66, 127, 196, 0.35);
-  border-radius: var(--radius-pill);
-  background: rgba(66, 127, 196, 0.08);
-  color: var(--info);
-  font-weight: 700;
-}
-
-.comment-placeholder {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 12px;
-  margin-top: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--neutral-line);
-}
-
-.avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--brand-orange-soft), var(--rank-wash));
-}
-
-.comment-placeholder p {
-  margin: 7px 0 0;
-  color: var(--text-muted);
-  line-height: 1.6;
+.merchant-notes {
+  column-count: 2;
+  column-gap: 16px;
 }
 
 .detail-sidebar {
@@ -450,6 +439,7 @@ h1 {
   border: 1px solid var(--neutral-line);
   border-radius: var(--radius-md);
   background: var(--neutral-surface);
+  overflow: hidden;
   box-shadow: var(--shadow-panel);
 }
 
@@ -489,6 +479,10 @@ h1 {
 
   h1 {
     font-size: 30px;
+  }
+
+  .merchant-notes {
+    column-count: 1;
   }
 }
 </style>

@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { OrderDisplayStatus } from '@/types/order';
+import type { OrderDisplayStatus } from '@/types/order';
 
 const props = defineProps<{
   status: OrderDisplayStatus;

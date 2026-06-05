@@ -2,18 +2,18 @@
   <main class="page login-page">
     <section class="login-intro">
       <span class="state-chip">欢迎回来</span>
-      <h1>登录后继续抢券和查看订单</h1>
+      <h1>登录后收藏好店，查看最近订单。</h1>
       <p>当前版本使用邮箱登录。输入任意合法邮箱即可进入用户端体验。</p>
       <div class="login-intro__points">
-        <span>商户优惠</span>
-        <span>秒杀抢券</span>
+        <span>收藏商户</span>
+        <span>到店消费</span>
         <span>最近订单</span>
       </div>
     </section>
 
     <section class="login-card card">
       <h2>邮箱登录</h2>
-      <p>推荐使用测试邮箱，便于重复体验抢券流程。</p>
+      <p>可以直接使用演示邮箱进入完整用户端体验。</p>
 
       <van-form class="login-form" @submit="submit">
         <van-field
@@ -29,7 +29,7 @@
       </van-form>
 
       <div class="quick-users">
-        <span>测试邮箱</span>
+        <span>演示邮箱</span>
         <button
           v-for="user in users"
           :key="user"
