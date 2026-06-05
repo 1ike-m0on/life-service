@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: life-service
+  labels:
+    app.kubernetes.io/name: life-service
+    app.kubernetes.io/part-of: life-service
