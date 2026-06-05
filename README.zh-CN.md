@@ -31,21 +31,6 @@ Life Service 是一个基于 Java 21、Spring Boot 3.5、Vue 3、MySQL、Redis �
 - Docker Compose 一键启动完整本地环境
 - 面向 Docker Desktop、kind、minikube 的本地 Kubernetes 部署基础
 
-## 项目定位
-
-很多示例项目只停留在 CRUD。Life Service 更关注本地生活系统里真正有代表性的业务链路：
-
-```text
-浏览商户
-  -> 查看优惠券
-  -> 秒杀抢券
-  -> 异步创建订单
-  -> 支付或超时关单
-  -> 观察缓存、限流、MQ 和监控行为
-```
-
-它适合作为学习项目、面试展示、作品集项目，以及继续扩展成更完整产品的基础工程。
-
 ## 快速启动
 
 前置要求：
@@ -183,7 +168,7 @@ flowchart LR
 
 ### Docker Compose
 
-推荐用于本地演示和评审体验：
+推荐用于本地启动和功能验证：
 
 ```bash
 docker compose up -d --build
@@ -199,7 +184,7 @@ Grafana 会自动加载 `Life Service Overview` 看板。
 
 ### Kubernetes
 
-用于本地 Kubernetes 学习和部署验证：
+用于本地 Kubernetes 部署验证：
 
 ```powershell
 .\deploy\k8s\local-rollout.ps1 -Target all -ApplyBase
@@ -214,6 +199,6 @@ Grafana 会自动加载 `Life Service Overview` 看板。
 
 ## 边界
 
-Life Service 是一个用于学习、展示和继续扩展的脚手架。它已经覆盖较完整的本地生活用户流程和多项后端工程能力，但目前还不是生产级高可用商业系统。
+Life Service 是一个可继续扩展的本地生活服务脚手架。它已经覆盖较完整的用户流程和多项后端工程能力，但目前还不是生产级高可用商业系统。
 
 后续可以继续补充真实支付流水、退款补偿、商户运营管理、生产级 Kubernetes overlay，以及网关级流量保护。

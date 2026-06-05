@@ -31,21 +31,6 @@ It is designed to feel like a usable local-life product prototype, not a raw API
 - Docker Compose one-command local deployment
 - Kubernetes local deployment foundation for Docker Desktop, kind, or minikube
 
-## Why This Scaffold Exists
-
-Many demo projects stop at CRUD. Life Service focuses on the flow that usually makes a local-life system interesting:
-
-```text
-browse merchants
-  -> view vouchers
-  -> claim a flash-sale voucher
-  -> create an order asynchronously
-  -> pay or wait for auto-close
-  -> observe cache, rate limit, MQ, and monitoring behavior
-```
-
-It is a practical base for learning, interviews, portfolio demos, and further product expansion.
-
 ## Quick Start
 
 Requirements:
@@ -183,7 +168,7 @@ More details:
 
 ### Docker Compose
 
-Recommended for local demo and reviewer evaluation:
+Recommended for local startup and feature verification:
 
 ```bash
 docker compose up -d --build
@@ -199,7 +184,7 @@ Grafana loads the `Life Service Overview` dashboard automatically.
 
 ### Kubernetes
 
-For local Kubernetes learning and deployment validation:
+For local Kubernetes deployment validation:
 
 ```powershell
 .\deploy\k8s\local-rollout.ps1 -Target all -ApplyBase
@@ -214,6 +199,6 @@ For daily app-only updates:
 
 ## Scope
 
-Life Service is a scaffold for learning, demonstration, and continued development. It already covers a mostly complete local-life product flow and several backend engineering patterns, but it is not a production-grade high-availability commercial system yet.
+Life Service is an extensible local-life service scaffold. It already covers a mostly complete user flow and several backend engineering patterns, but it is not a production-grade high-availability commercial system yet.
 
 Planned extensions include real payment records, refund compensation, richer merchant operations, production Kubernetes overlays, and gateway-level traffic protection.
