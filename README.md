@@ -5,41 +5,116 @@
 [![CI](https://github.com/1ike-m0on/life-service/actions/workflows/ci.yml/badge.svg)](https://github.com/1ike-m0on/life-service/actions/workflows/ci.yml)
 [![Docker Publish](https://github.com/1ike-m0on/life-service/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/1ike-m0on/life-service/actions/workflows/docker-publish.yml)
 
-Life Service is a full-stack local-life service scaffold built with Java 21,
-Spring Boot 3.5, Vue 3, Redis, MySQL, and RocketMQ.
+Life Service is a full-stack local-life service scaffold built with Java 21, Spring Boot 3.5, Vue 3, MySQL, Redis, and RocketMQ.
 
-It is designed as a polished product prototype rather than a raw API demo:
-users can browse merchants, view voucher offers, claim flash-sale vouchers,
-check order status, and try the payment/close flow from a PC-friendly frontend.
+It is designed to feel like a usable local-life product prototype, not a raw API playground. After starting the project, users can browse merchants, read local-life content, view vouchers, claim flash-sale offers, check orders, and try the basic payment and auto-close flow.
 
-## Screenshots
+## For Reviewers
 
-| Home | Merchant Detail |
+- Start locally: `docker compose up -d --build`
+- Open UI: `http://localhost:8080`
+- Demo account: `demo2001@life.local`
+- Main demo path: merchant browsing -> voucher detail -> flash-sale claim -> order -> simulated payment / auto-close
+- Engineering focus: Redis Lua qualification, RocketMQ async order creation, cache invalidation retry, payment/close state protection, Prometheus/Grafana monitoring
+
+## What You Can Experience
+
+- Merchant discovery with a PC-friendly local-life interface
+- Merchant detail pages with vouchers and product-like feedback
+- Email login with Redis-backed token authentication
+- Flash-sale voucher claiming with hot-data warmup and fail-closed behavior
+- Order creation through RocketMQ asynchronous processing
+- Order list, order status, simulated payment, and unpaid order auto-close
+- Cache optimization for read-heavy merchant and voucher data
+- Sliding-window rate limiting for traffic protection
+- Prometheus and Grafana monitoring for key backend metrics
+- Docker Compose one-command local deployment
+- Kubernetes local deployment foundation for Docker Desktop, kind, or minikube
+
+## Why This Scaffold Exists
+
+Many demo projects stop at CRUD. Life Service focuses on the flow that usually makes a local-life system interesting:
+
+```text
+browse merchants
+  -> view vouchers
+  -> claim a flash-sale voucher
+  -> create an order asynchronously
+  -> pay or wait for auto-close
+  -> observe cache, rate limit, MQ, and monitoring behavior
+```
+
+It is a practical base for learning, interviews, portfolio demos, and further product expansion.
+
+## Quick Start
+
+Requirements:
+
+- Docker Desktop or Docker Engine
+
+Start the full local stack:
+
+```bash
+docker compose up -d --build
+```
+
+Open the product UI:
+
+```text
+http://localhost:8080
+```
+
+Useful local endpoints:
+
+| Service | URL |
 | --- | --- |
-| ![Home](assets/screenshots/home.png) | ![Merchant Detail](assets/screenshots/merchant-detail.png) |
+| Frontend | http://localhost:8080 |
+| Backend health | http://localhost:8081/actuator/health |
+| Backend metrics | http://localhost:8081/actuator/prometheus |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000 |
 
-| Flash-sale Claim | Orders |
-| --- | --- |
-| ![Flash-sale Claim](assets/screenshots/flash-sale-claim.png) | ![Orders](assets/screenshots/orders.png) |
+Stop the stack:
 
-## What It Provides
+```bash
+docker compose down
+```
 
-- Consumer-facing local-life web experience
-- Merchant discovery, merchant detail, voucher list, flash-sale claim, and order page
-- Email login with Redis token authentication
-- Redis + Caffeine multi-level cache for read-heavy data
-- Cache invalidation with local retry task compensation
-- Flash-sale hot data warmup and fail-closed request path
-- Redis Lua qualification for stock and one-user-one-order checks
-- RocketMQ asynchronous order creation
-- Unpaid order auto-close and stock release retry
-- Simulated payment callback with paid/closed state handling
-- Sliding-window rate limiting based on Redis ZSet + Lua
-- Request trace logging, Actuator health, and Prometheus metrics endpoint
-- One-command Docker Compose startup for frontend, backend, and middleware
-- Optional Prometheus and Grafana monitoring profile
+Reset local data:
 
-## Architecture At A Glance
+```bash
+docker compose down -v
+```
+
+## Demo Account
+
+The demo profile initializes sample users, merchants, vouchers, and flash-sale data.
+
+```text
+demo2001@life.local
+```
+
+Login uses a Redis-backed token:
+
+```http
+Authorization: Bearer {token}
+```
+
+## Demo Flow
+
+1. Start the stack with Docker Compose.
+2. Open `http://localhost:8080`.
+3. Log in with the demo email.
+4. Browse merchants and local-life content.
+5. Open a merchant detail page.
+6. Claim a flash-sale voucher.
+7. Check the generated order.
+8. Try simulated payment or wait for auto-close.
+9. Open Grafana to observe backend metrics.
+
+Business states such as stock exhausted, duplicate claim, hot data missing, and rate limiting are returned as normal product feedback.
+
+## Technical Highlights
 
 ```mermaid
 flowchart LR
@@ -54,156 +129,91 @@ flowchart LR
     Consumer --> Redis
 ```
 
+- Redis + Caffeine multi-level cache for merchant and voucher reads
+- Cache invalidation retry task for eventual consistency
+- Flash-sale hot-data warmup at startup
+- Redis Lua qualification for stock, one-user-one-order, and activity checks
+- RocketMQ asynchronous order creation
+- Redis rollback when order publishing fails after qualification
+- Unpaid order auto-close with stock release retry
+- Payment/close state protection with conditional updates
+- Request trace logging and Micrometer metrics
+- GitHub Actions CI and Docker image publishing
+
 More details:
 
 - [Architecture notes](ARCHITECTURE.md)
-- [Benchmark summary](BENCHMARK.md), including ★ V2.1 monitored tuning results
+- [Benchmark summary](BENCHMARK.md)
 - [Deployment guide](DEPLOYMENT.md)
+- [Kubernetes runbook](deploy/k8s/README.md)
 
 ## Tech Stack
 
 | Layer | Stack |
 | --- | --- |
 | Backend | Java 21, Spring Boot 3.5, MyBatis-Plus |
-| Frontend | Vue 3, Vite, Pinia, Axios |
+| Frontend | Vue 3, Vite, Pinia, Axios, Nginx |
 | Database | MySQL 8, Flyway |
 | Cache | Redis, Caffeine |
 | Messaging | RocketMQ |
-| Gateway | Nginx |
-| Delivery | Docker Compose, GitHub Actions |
-
-## Quick Start
-
-Requirements:
-
-- Docker Desktop or Docker Engine
-
-Start the full local stack:
-
-```bash
-docker compose up -d --build
-```
-
-Open:
-
-| Service | URL |
-| --- | --- |
-| Frontend | http://localhost:8080 |
-| Backend health | http://localhost:8081/actuator/health |
-| Backend metrics | http://localhost:8081/actuator/prometheus |
-| MySQL | localhost:3307 |
-| Redis | localhost:6379 |
-| RocketMQ NameServer | localhost:9876 |
-
-Stop:
-
-```bash
-docker compose down
-```
-
-Reset local data:
-
-```bash
-docker compose down -v
-```
-
-Optional monitoring stack:
-
-```bash
-docker compose --profile monitor up -d
-```
-
-| Service | URL |
-| --- | --- |
-| Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 |
-
-Default Grafana login is `admin` / `admin` for local demo use.
-Grafana auto-loads the `Life Service Overview` dashboard from the repository.
-
-Useful Prometheus metric names for the current demo:
-
-```text
-life_flash_sale_request_total
-life_flash_sale_success_total
-life_flash_sale_stock_not_enough_total
-life_flash_sale_duplicate_total
-life_flash_sale_not_ready_total
-life_cache_delete_task_pending
-life_order_close_success_total
-life_stock_release_failure_total
-life_rate_limit_rejected_total
-```
-
-Reusable local load-test assets are available under `tests/load/jmeter`. They
-include a parameterized JMeter plan, token CSV preparation scripts, and reset SQL
-for repeatable flash-sale benchmark runs.
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for ports, resource limits, optional
-RocketMQ dashboard, development middleware mode, and published image mode.
-
-## Demo Account
-
-The Docker demo profile loads seed data and warms eligible flash-sale vouchers
-into Redis at startup.
-
-```text
-demo2001@life.local
-```
-
-The login flow stores a Redis-backed token and uses:
-
-```http
-Authorization: Bearer {token}
-```
-
-## Demo Flow
-
-1. Start the stack with Docker Compose.
-2. Open `http://localhost:8080`.
-3. Log in with the demo email.
-4. Browse merchants from the home page.
-5. Open a merchant detail page and review vouchers.
-6. Claim a flash-sale voucher.
-7. Check the order page.
-8. Try simulated payment and observe paid/closed behavior.
-
-Business feedback such as stock insufficient, duplicate claim, hot data not
-ready, and rate limiting is returned as normal product feedback in the UI.
+| Monitoring | Spring Boot Actuator, Micrometer, Prometheus, Grafana |
+| Delivery | Docker Compose, Kubernetes, GitHub Actions |
 
 ## Project Layout
 
 ```text
 .
-|-- frontend/                 # Vue 3 PC frontend
+|-- frontend/                 # Vue 3 frontend
 |-- src/main/java/io/github/ikemoon/lifeservice
 |   |-- common/               # API response, exception, logging, auth
-|   |-- infrastructure/       # cache, id generator, rate limit
-|   |-- merchant/             # merchant category and merchant query
+|   |-- infrastructure/       # cache, ID generation, rate limit
+|   |-- merchant/             # merchant query
 |   |-- voucher/              # voucher query and flash-sale warmup
-|   |-- order/                # flash-sale order, close, payment, stock release
-|   `-- user/                 # email login and token auth
+|   |-- order/                # order, payment, close, stock release
+|   `-- user/                 # login, token auth, user surface
 |-- src/main/resources/db/    # Flyway migrations and demo data
-|-- deploy/                   # compose templates and environment examples
-|-- compose.yaml              # one-command local demo stack
-|-- ARCHITECTURE.md           # architecture notes
-|-- BENCHMARK.md              # benchmark summary
-`-- DEPLOYMENT.md             # deployment guide
+|-- deploy/                   # Docker, monitoring, Kubernetes
+|-- tests/                    # load-test assets
+|-- ARCHITECTURE.md
+|-- BENCHMARK.md
+`-- DEPLOYMENT.md
 ```
 
-## Roadmap
+## Deployment Options
 
-- Real payment gateway integration
-- Payment transaction and refund records
-- MQ-based close/payment compensation
-- Admin-side merchant and voucher management
-- Grafana dashboards and alert rules
-- Multi-instance deployment verification
-- Gateway-level traffic protection and risk control
+### Docker Compose
+
+Recommended for local demo and reviewer evaluation:
+
+```bash
+docker compose up -d --build
+```
+
+### Monitoring Profile
+
+```bash
+docker compose --profile monitor up -d
+```
+
+Grafana loads the `Life Service Overview` dashboard automatically.
+
+### Kubernetes
+
+For local Kubernetes learning and deployment validation:
+
+```powershell
+.\deploy\k8s\local-rollout.ps1 -Target all -ApplyBase
+```
+
+For daily app-only updates:
+
+```powershell
+.\deploy\k8s\local-rollout.ps1 -Target backend
+.\deploy\k8s\local-rollout.ps1 -Target frontend
+```
 
 ## Scope
 
-Life Service is a scaffold for learning, demonstration, and continued
-development. It focuses on a realistic local-life product flow and several
-backend engineering patterns, but it is not yet a production-ready,
-high-availability commercial system.
+Life Service is a scaffold for learning, demonstration, and continued development. It already covers a mostly complete local-life product flow and several backend engineering patterns, but it is not a production-grade high-availability commercial system yet.
+
+Planned extensions include real payment records, refund compensation, richer merchant operations, production Kubernetes overlays, and gateway-level traffic protection.
