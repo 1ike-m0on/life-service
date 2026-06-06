@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a product or engineering feature for Life Service.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What user or engineering outcome should this feature create?
+      placeholder: Describe the feature goal and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: user-flow
+    attributes:
+      label: User flow
+      description: If this affects the product UI or API usage, describe the expected flow.
+      placeholder: |
+        1. User opens ...
+        2. User chooses ...
+        3. System returns ...
+  - type: textarea
+    id: backend-impact
+    attributes:
+      label: Backend impact
+      description: Mention expected API, database, cache, MQ, or scheduler changes.
+  - type: textarea
+    id: frontend-impact
+    attributes:
+      label: Frontend impact
+      description: Mention expected pages, components, states, or interactions.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true for this feature to be considered done?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
