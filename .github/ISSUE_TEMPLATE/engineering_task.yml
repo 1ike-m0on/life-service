@@ -1,0 +1,40 @@
+name: Engineering task
+description: Track internal architecture, testing, deployment, or maintenance work.
+title: "chore: "
+labels:
+  - engineering
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why is this task needed?
+      placeholder: Describe the background and current limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What files, modules, or workflows are expected to change?
+      placeholder: |
+        - Backend:
+        - Frontend:
+        - Infrastructure:
+        - Documentation:
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: How should this task be verified?
+      placeholder: |
+        - [ ] mvn test
+        - [ ] npm run build
+        - [ ] docker compose up -d --build
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk and boundaries
+      description: Note known risks, non-goals, or follow-up work.

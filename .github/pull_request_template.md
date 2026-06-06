@@ -2,10 +2,14 @@
 
 - 
 
-## Tests
+## Validation
 
 - [ ] `mvn test`
+- [ ] `npm run build`
 
-## Notes
+## Scope
 
-- 
+- [ ] Backend
+- [ ] Frontend
+- [ ] Infrastructure
+- [ ] Documentation
