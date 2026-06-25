@@ -5,16 +5,53 @@ files are not committed.
 
 ## Scope
 
-The current load tests focus on the flash-sale order endpoint:
+The load-test plans cover two different goals:
+
+```text
+flash-sale-orders.jmx
+flash-sale-orders-gui.jmx
+```
+
+These are focused flash-sale order plans for the hot endpoint:
 
 ```text
 POST /api/v1/flash-sale-vouchers/{voucherId}/orders
 ```
 
-The endpoint requires `Authorization: Bearer <token>`. The test plan reads a
-token CSV so the measured request path stays close to the real flash-sale
-order path. Login/token creation is handled as a setup step, not inside the
-timed order sampler.
+Use them to benchmark the optimized async flash-sale order path, stock
+competition, sold-out fast failure, and fail-closed behavior.
+
+```text
+mixed-user-behavior.jmx
+```
+
+This is a broader user-journey plan. It keeps browsing traffic as the dominant
+behavior and adds a small amount of flash-sale order, order detail, order list,
+and optional payment traffic. Use it when you want production-like evidence
+across the local life-service surface instead of a single hot endpoint.
+
+```text
+public-dataset-query-read.jmx
+```
+
+This is a read-heavy public dataset plan. It assumes the S1 public dataset has
+already been imported into MySQL and measures merchant, note, voucher, and user
+order query paths against the larger dataset.
+
+All plans read a token CSV prepared before the timed run. Login/token creation
+stays outside JMeter so the measured path is repeatable.
+
+The PowerShell scripts in `scripts/` are the preferred entry points:
+
+```text
+New-LoadUsers.ps1                  generate user CSVs
+New-AuthTokens.ps1                 prepare token CSVs
+Reset-FlashSaleVoucher.ps1         reset MySQL/Redis and optionally warm up
+Invoke-LoadScenario.ps1            run one named scenario
+Invoke-PublicDatasetQueryScenario.ps1 run the public dataset read scenario
+Invoke-ReadBehaviorEvidenceSet.ps1 run mixed + public dataset evidence together
+Invoke-ProductionEvidenceLoadSet.ps1 run the planned scenario set in order
+```
 
 ## Prerequisites
 
@@ -66,27 +103,127 @@ email,token,clientIp
 `clientIp` is sent as `X-Forwarded-For` so local single-machine tests can avoid
 turning the IP-level rate limiter into the only bottleneck.
 
+The committed JMX files use `recycle=false` and `stopThread=true`. Prepare at
+least `threads * loops` token rows for a run unless you intentionally change
+that JMeter setting in a local copy.
+
 ## Reset Flash-Sale Data
 
-Before a clean benchmark run, reset MySQL state:
+Before a clean benchmark run, reset MySQL state, clear Redis hot keys, clear
+flash-sale rate-limit keys, and warm Redis again:
 
 ```powershell
-docker exec -i life-service-mysql mysql -uroot -proot life_service < .\tests\load\sql\reset-flash-sale-voucher.sql
+.\tests\load\jmeter\scripts\Reset-FlashSaleVoucher.ps1 `
+  -VoucherId 1001 `
+  -Stock 12000 `
+  -BaseUrl http://localhost:8081
 ```
 
-Then clear Redis flash-sale hot keys and warm up again:
+For fail-closed evidence, reset MySQL and then leave the Redis hot-path keys
+missing:
 
 ```powershell
-docker exec life-service-redis redis-cli DEL `
-  life:cache:flash-sale-voucher:1001 `
-  life:flash:voucher:stock:1001 `
-  life:flash:voucher:users:1001 `
-  life:flash:voucher:released-orders:1001
-
-curl -X POST http://localhost:8081/api/v1/flash-sale-vouchers/1001/warmup
+.\tests\load\jmeter\scripts\Reset-FlashSaleVoucher.ps1 `
+  -VoucherId 1001 `
+  -Stock 12000 `
+  -BaseUrl http://localhost:8081 `
+  -FailClosed
 ```
 
-## Scenario 1: Success Path Baseline
+The same reset is enough for the mixed behavior plan when it uses
+`voucherId=1001`. If you pass another `voucherId`, pass it to the wrapper with
+`-VoucherId`.
+
+The SQL file also accepts caller-provided `@load_voucher_id` and `@load_stock`
+session variables when you need to source it manually.
+
+## Run The Planned Set
+
+By default, the scenario wrappers archive run output under:
+
+```text
+tests/load/jmeter/results/evidence-<RunId>/
+```
+
+The `results/` folder is git-ignored. Each scenario writes a JTL file, an
+optional JMeter HTML dashboard directory, a `*-summary.json`, and a
+`*-summary.md`. Set runners also write aggregate `summary.json` and
+`summary.md` files in the evidence directory.
+
+Run the mixed user behavior and public dataset read evidence set in one command:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ReadBehaviorEvidenceSet.ps1 `
+  -BaseUrl http://localhost:8081 `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+Run only one scenario or skip one:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ReadBehaviorEvidenceSet.ps1 `
+  -OnlyScenario mixed-user-behavior `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+
+.\tests\load\jmeter\scripts\Invoke-ReadBehaviorEvidenceSet.ps1 `
+  -SkipScenario public-dataset-query-read `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+Preview the complete command flow without writing output or calling the backend:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ReadBehaviorEvidenceSet.ps1 `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv `
+  -DryRun
+```
+
+`-WhatIf` is also accepted and behaves like `-DryRun`. If you pass `-UsersCsv`
+without `-TokenCsv`, the runner prepares a run-local token CSV under the
+evidence directory before the timed JMeter scenarios:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ReadBehaviorEvidenceSet.ps1 `
+  -UsersCsv .\tests\load\jmeter\data\users-12000.csv `
+  -JMeterBin C:\tools\apache-jmeter\bin\jmeter.bat
+```
+
+Run the complete V2.5 production-evidence set in order:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ProductionEvidenceLoadSet.ps1 `
+  -BaseUrl http://localhost:8081 `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+Run quick local verification with small scenario shapes and no HTML report:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ProductionEvidenceLoadSet.ps1 `
+  -BaseUrl http://localhost:8081 `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv `
+  -Smoke `
+  -NoHtmlReport
+```
+
+Preview the reset and JMeter commands without changing data:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ProductionEvidenceLoadSet.ps1 `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv `
+  -DryRun
+```
+
+The production evidence set also supports `-OnlyScenario`, `-SkipScenario`,
+`-UsersCsv`, `-OutputDir`, `-JMeterBin`, `-DryRun`, and `-WhatIf`.
+
+The scenario wrappers inspect the generated JTL and fail when any sample has
+`success=false`. Use `-AllowSampleErrors` only for exploratory runs where failed
+samples are intentionally being collected.
+
+## Flash-Sale Specialized Scenarios
+
+### Scenario 1: Success Path Baseline
 
 Purpose:
 
@@ -106,18 +243,13 @@ ramp-up:  10s
 loops:    60
 ```
 
-Run in non-GUI mode:
+Run with the wrapper:
 
 ```powershell
-jmeter -n `
-  -t .\tests\load\jmeter\flash-sale-orders.jmx `
-  -l .\tests\load\jmeter\results\flash-sale-success.jtl `
-  -e -o .\tests\load\jmeter\results\flash-sale-success-html `
-  -JtokenCsv=.\tests\load\jmeter\data\tokens-12000.csv `
-  -Jthreads=200 `
-  -JrampUp=10 `
-  -Jloops=60 `
-  -JvoucherId=1001
+.\tests\load\jmeter\scripts\Invoke-LoadScenario.ps1 `
+  -Scenario success `
+  -PrepareData `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
 ```
 
 Watch:
@@ -128,7 +260,7 @@ life_flash_sale_success_total
 HTTP P95 / P99 in Grafana
 ```
 
-## Scenario 2: Stock Competition
+### Scenario 2: Stock Competition
 
 Purpose:
 
@@ -152,7 +284,16 @@ not read business failure percentage as system error rate. The important checks
 are final order count, Redis stock, purchased-user set size, and duplicate
 orders.
 
-## Scenario 3: Sold-Out Fast Failure
+Run with the wrapper:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-LoadScenario.ps1 `
+  -Scenario stock-competition `
+  -PrepareData `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+### Scenario 3: Sold-Out Fast Failure
 
 Purpose:
 
@@ -165,7 +306,7 @@ Example:
 ```text
 requests: 12000
 users:    12000 unique users
-stock:    200
+stock:    0 for all requests to fail fast, or 200 to include initial winners
 threads:  200
 ramp-up:  10s
 loops:    60
@@ -178,7 +319,16 @@ life_flash_sale_stock_not_enough_total
 HTTP 5xx should stay at 0
 ```
 
-## Scenario 4: Fail Closed
+Run with the wrapper:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-LoadScenario.ps1 `
+  -Scenario sold-out-fast-failure `
+  -PrepareData `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+### Scenario 4: Fail Closed
 
 Purpose:
 
@@ -197,6 +347,163 @@ no MQ publish
 no MySQL order creation
 ```
 
+Run with the wrapper:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-LoadScenario.ps1 `
+  -Scenario fail-closed `
+  -PrepareData `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+### Scenario 5: Rate Limit
+
+Purpose:
+
+```text
+Verify the hot endpoint returns RATE_LIMITED / HTTP 429 when one source sends
+more than the configured IP threshold.
+```
+
+The wrapper passes a shared `clientIpOverride` to JMeter for this scenario.
+Normal scenarios still use the per-row `clientIp` values from the token CSV.
+
+Recommended starting inputs:
+
+```text
+threads: 40
+ramp-up: 1s
+loops:   2
+stock:   12000
+```
+
+Run with the wrapper:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-LoadScenario.ps1 `
+  -Scenario rate-limit `
+  -PrepareData `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+Expected evidence:
+
+```text
+HTTP 200 responses before the IP threshold is crossed
+HTTP 429 responses after the threshold is crossed
+ApiResponse.code=RATE_LIMITED for rejected requests
+life.rate.limit.rejected increases
+```
+
+## Mixed User Behavior Scenario
+
+Purpose:
+
+```text
+Exercise the product-shaped path: browse discovery data, inspect merchants and
+content, view vouchers, attempt a small amount of flash-sale ordering, review
+orders, and optionally pay a subset of created orders.
+```
+
+Per loop, `mixed-user-behavior.jmx` covers:
+
+```text
+GET  /api/v1/merchant-categories
+GET  /api/v1/merchants
+GET  /api/v1/notes
+GET  /api/v1/merchants/{merchantId}
+GET  /api/v1/merchants/{merchantId}/vouchers
+GET  /api/v1/merchants/{merchantId}/notes
+GET  /api/v1/notes/{noteId}
+POST /api/v1/flash-sale-vouchers/{voucherId}/orders        optional
+GET  /api/v1/voucher-orders/{orderNo}                       optional after a created order
+POST /api/v1/voucher-orders/{orderNo}/payment               optional after a created order
+GET  /api/v1/users/me/voucher-orders
+```
+
+The plan extracts `merchantId` and `noteId` from list responses. If extraction
+does not find a record, it falls back to `defaultMerchantId=1` and
+`defaultNoteId=1`.
+
+Recommended starting inputs:
+
+```text
+threads:       50
+ramp-up:       20s
+loops:         20
+orderPercent:  5
+payPercent:    20
+orderWaitMs:   1000
+```
+
+`orderPercent` is evaluated per loop. `payPercent` is evaluated only after a
+successful flash-sale order response created an `orderNo`. Business rejections
+from duplicate users or stock exhaustion are expected as data is consumed; do
+not treat them as infrastructure errors unless HTTP 5xx or assertion failures
+also appear.
+
+Run with the wrapper:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-LoadScenario.ps1 `
+  -Scenario mixed-user-behavior `
+  -PrepareData `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+Small smoke run:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-LoadScenario.ps1 `
+  -Scenario mixed-user-behavior `
+  -PrepareData `
+  -Smoke `
+  -NoHtmlReport `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+If the smoke run reports order-detail failures under load, inspect RocketMQ
+consumer lag and either increase `orderWaitMs` or set `payPercent=0` when the
+run is meant to measure browsing plus order submission only.
+
+## Public Dataset Read Scenario
+
+Purpose:
+
+```text
+Exercise the S1 public dataset read paths with stable query volume after data
+has been imported into MySQL.
+```
+
+Per loop, `public-dataset-query-read.jmx` covers:
+
+```text
+GET /api/v1/merchants
+GET /api/v1/notes
+GET /api/v1/merchants/{merchantId}
+GET /api/v1/merchants/{merchantId}/vouchers
+GET /api/v1/merchants/{merchantId}/notes
+GET /api/v1/notes/{noteId}
+GET /api/v1/users/me/voucher-orders
+```
+
+Run with the wrapper:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-PublicDatasetQueryScenario.ps1 `
+  -BaseUrl http://localhost:8081 `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+Run with explicit archive and JMeter binary:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-PublicDatasetQueryScenario.ps1 `
+  -OutputDir .\tests\load\jmeter\results\evidence-public-read `
+  -JMeterBin C:\tools\apache-jmeter\bin\jmeter.bat `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
 ## Result Interpretation
 
 For every run, record:
@@ -205,6 +512,7 @@ For every run, record:
 branch / commit
 machine and Docker resources
 JMeter GUI or non-GUI
+scenario file and parameters
 requests / users / stock / threads / ramp-up / loops
 average / median / P90 / P95 / P99 / max / throughput
 HTTP 5xx
@@ -214,5 +522,42 @@ MySQL order count and duplicate count
 Grafana observations
 ```
 
+For `mixed-user-behavior.jmx`, compare parent transaction samples such as
+`Browse home feed`, `Inspect merchant and content`, and `Review my orders`
+alongside individual endpoint samples. The mixed plan is meant to expose
+read-path latency, authentication overhead on order queries, and the effect of
+a small write path mixed into normal browsing traffic.
+
+The JMeter console summary can be misleading for this plan because parent
+transactions and child HTTP samples are both written to the JTL. Use the JTL or
+HTML report as the source of truth for total sample count, per-label latency,
+and error rate.
+
 Local load-test numbers are useful for comparing versions on the same machine.
 They are not production SLA claims.
+
+The generated `summary.md` files are intended as the handoff index for archived
+evidence. Use the JTL or HTML dashboard when you need per-sample detail or the
+full JMeter percentile tables.
+
+## JMX Validation
+
+Validate changed JMX files are well-formed XML:
+
+```powershell
+$plans = @(
+  ".\tests\load\jmeter\flash-sale-orders.jmx",
+  ".\tests\load\jmeter\mixed-user-behavior.jmx",
+  ".\tests\load\jmeter\public-dataset-query-read.jmx"
+)
+
+foreach ($plan in $plans) {
+  [xml](Get-Content -Raw -LiteralPath $plan) | Out-Null
+}
+```
+
+Before handing off a change, also run:
+
+```powershell
+git diff --check
+```

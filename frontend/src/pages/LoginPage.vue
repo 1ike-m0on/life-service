@@ -15,15 +15,16 @@
       <h2>邮箱登录</h2>
       <p>可以直接使用演示邮箱进入完整用户端体验。</p>
 
-      <van-form class="login-form" @submit="submit">
+      <van-form class="login-form" data-testid="login-form" @submit="submit">
         <van-field
           v-model="email"
           name="email"
+          data-testid="login-email"
           label="邮箱"
           placeholder="demo2001@life.local"
           :rules="[{ validator: validateEmail, message: '请输入正确邮箱格式' }]"
         />
-        <van-button block type="primary" native-type="submit" :loading="authStore.loading">
+        <van-button block type="primary" native-type="submit" data-testid="login-submit" :loading="authStore.loading">
           登录
         </van-button>
       </van-form>

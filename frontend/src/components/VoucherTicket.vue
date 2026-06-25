@@ -1,5 +1,9 @@
 <template>
-  <article class="voucher-ticket" :class="{ 'voucher-ticket--flash': isFlashSale }">
+  <article
+    class="voucher-ticket"
+    :class="{ 'voucher-ticket--flash': isFlashSale }"
+    :data-testid="`voucher-ticket-${voucher.id}`"
+  >
     <div class="voucher-ticket__stub" aria-hidden="true">
       <span />
       <span />
@@ -20,7 +24,12 @@
     </div>
 
     <div class="voucher-ticket__action">
-      <button type="button" :disabled="loading" @click="$emit('claim', voucher)">
+      <button
+        type="button"
+        :disabled="loading"
+        :data-testid="`voucher-claim-${voucher.id}`"
+        @click="$emit('claim', voucher)"
+      >
         {{ loading ? '处理中' : isFlashSale ? '抢券' : '查看' }}
       </button>
       <small>{{ isFlashSale ? '成功后生成订单' : '到店可用' }}</small>

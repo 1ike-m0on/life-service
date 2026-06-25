@@ -1,5 +1,6 @@
 package io.github.ikemoon.lifeservice.infrastructure.cache;
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import io.github.ikemoon.lifeservice.infrastructure.cache.entity.CacheDeleteTask;
 import io.github.ikemoon.lifeservice.infrastructure.cache.enums.CacheDeleteTaskStatus;
 import io.github.ikemoon.lifeservice.infrastructure.cache.mapper.CacheDeleteTaskMapper;
@@ -111,7 +112,12 @@ class CacheInvalidationServiceTest {
         assertThat(deleted).isEqualTo(1);
         verify(localCacheService).invalidate(CACHE_KEY);
         verify(redisTemplate).delete(CACHE_KEY);
-        verify(cacheDeleteTaskMapper).update(eq(null), any());
+        ArgumentCaptor<UpdateWrapper<CacheDeleteTask>> updateCaptor = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(cacheDeleteTaskMapper).update(eq(null), updateCaptor.capture());
+        assertThat(updateCaptor.getValue().getSqlSet()).contains("status", "updated_at");
+        assertThat(updateCaptor.getValue().getSqlSegment()).contains("id", "status");
+        assertThat(updateCaptor.getValue().getParamNameValuePairs().values())
+                .contains(CacheDeleteTaskStatus.SUCCESS.code());
     }
 
     @Test
@@ -123,7 +129,11 @@ class CacheInvalidationServiceTest {
         int deleted = service.retryPendingTasks();
 
         assertThat(deleted).isZero();
-        verify(cacheDeleteTaskMapper).update(eq(null), any());
+        ArgumentCaptor<UpdateWrapper<CacheDeleteTask>> updateCaptor = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(cacheDeleteTaskMapper).update(eq(null), updateCaptor.capture());
+        assertThat(updateCaptor.getValue().getSqlSet()).contains("status", "reason", "retry_count", "next_retry_at");
+        assertThat(updateCaptor.getValue().getParamNameValuePairs().values())
+                .contains(CacheDeleteTaskStatus.PENDING.code(), "redis down", 4);
         assertThat(counter("life.cache.delete.task.failed")).isZero();
     }
 
@@ -137,7 +147,11 @@ class CacheInvalidationServiceTest {
         int deleted = service.retryPendingTasks();
 
         assertThat(deleted).isZero();
-        verify(cacheDeleteTaskMapper).update(eq(null), any());
+        ArgumentCaptor<UpdateWrapper<CacheDeleteTask>> updateCaptor = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(cacheDeleteTaskMapper).update(eq(null), updateCaptor.capture());
+        assertThat(updateCaptor.getValue().getSqlSet()).contains("status", "reason", "retry_count", "next_retry_at");
+        assertThat(updateCaptor.getValue().getParamNameValuePairs().values())
+                .contains(CacheDeleteTaskStatus.PENDING.code(), "redis down", 1);
         assertThat(counter("life.cache.delete.task.failed")).isZero();
     }
 
@@ -150,7 +164,11 @@ class CacheInvalidationServiceTest {
         int deleted = service.retryPendingTasks();
 
         assertThat(deleted).isZero();
-        verify(cacheDeleteTaskMapper).update(eq(null), any());
+        ArgumentCaptor<UpdateWrapper<CacheDeleteTask>> updateCaptor = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(cacheDeleteTaskMapper).update(eq(null), updateCaptor.capture());
+        assertThat(updateCaptor.getValue().getSqlSet()).contains("status", "reason", "retry_count", "next_retry_at");
+        assertThat(updateCaptor.getValue().getParamNameValuePairs().values())
+                .contains(CacheDeleteTaskStatus.FAILED.code(), "redis down", 5);
         assertThat(counter("life.cache.delete.task.failed")).isEqualTo(1);
     }
 

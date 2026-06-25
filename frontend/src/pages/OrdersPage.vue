@@ -1,5 +1,5 @@
 <template>
-  <main class="page">
+  <main class="page" data-testid="orders-page">
     <section class="orders-head">
       <div>
         <span class="state-chip">我的订单</span>
@@ -39,7 +39,13 @@
         </EmptyState>
 
         <div v-else class="order-list">
-          <article v-for="order in orderStore.recentOrders" :key="order.orderNo" class="order-card card">
+          <article
+            v-for="order in orderStore.recentOrders"
+            :key="order.orderNo"
+            class="order-card card"
+            :data-testid="`order-card-${order.orderNo}`"
+            :data-order-status="order.status"
+          >
             <div class="order-card__top">
               <div>
                 <h2>{{ order.voucherTitle }}</h2>

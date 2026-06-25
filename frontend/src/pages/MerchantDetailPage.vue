@@ -3,10 +3,10 @@
     <van-skeleton v-if="loading" title avatar :row="10" />
 
     <template v-else-if="merchant">
-      <div class="detail-title">
+      <div class="detail-title" data-testid="merchant-detail-page">
         <div>
           <RouterLink class="back-link" to="/merchants">返回找好店</RouterLink>
-          <h1>{{ merchant.name }}</h1>
+          <h1 data-testid="merchant-detail-name">{{ merchant.name }}</h1>
           <div class="rating-line">
             <van-rate
               :model-value="merchant.score / 10"
@@ -89,7 +89,7 @@
         </div>
 
         <aside class="sidebar detail-sidebar">
-          <section class="voucher-panel">
+          <section class="voucher-panel" data-testid="voucher-panel">
             <div class="section-title">
               <div>
                 <h2>团购与代金券</h2>
@@ -113,7 +113,7 @@
             </div>
           </section>
 
-          <section v-if="lastMessage || merchantLastOrder" class="result-panel">
+          <section v-if="lastMessage || merchantLastOrder" class="result-panel" data-testid="order-result-panel">
             <span class="state-chip" :class="{ 'state-chip--danger': lastError }">
               {{ lastError ? '购买反馈' : '订单状态' }}
             </span>
