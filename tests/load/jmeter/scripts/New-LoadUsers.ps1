@@ -54,12 +54,7 @@ function Move-GeneratedFile {
         [string] $TargetPath
     )
 
-    if (Test-Path -LiteralPath $TargetPath) {
-        [System.IO.File]::Replace($TempPath, $TargetPath, $null, $true)
-    }
-    else {
-        [System.IO.File]::Move($TempPath, $TargetPath)
-    }
+    Move-Item -LiteralPath $TempPath -Destination $TargetPath -Force
 }
 
 if ($EmailPrefix -match '[,\r\n@]') {

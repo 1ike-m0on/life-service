@@ -140,11 +140,11 @@ jmeter -n `
   -t .\tests\load\jmeter\flash-sale-orders.jmx `
   -l .\tests\load\jmeter\results\flash-sale-success.jtl `
   -e -o .\tests\load\jmeter\results\flash-sale-success-html `
-  -JtokenCsv=.\tests\load\jmeter\data\tokens-12000.csv `
-  -Jthreads=200 `
-  -JrampUp=10 `
-  -Jloops=60 `
-  -JvoucherId=1001
+  "-JtokenCsv=.\tests\load\jmeter\data\tokens-12000.csv" `
+  "-Jthreads=200" `
+  "-JrampUp=10" `
+  "-Jloops=60" `
+  "-JvoucherId=1001"
 ```
 
 Watch:
@@ -278,15 +278,15 @@ jmeter -n `
   -t .\tests\load\jmeter\mixed-user-behavior.jmx `
   -l .\tests\load\jmeter\results\mixed-user-behavior.jtl `
   -e -o .\tests\load\jmeter\results\mixed-user-behavior-html `
-  -JbaseUrl=http://localhost:8081 `
-  -JtokenCsv=.\tests\load\jmeter\data\tokens-12000.csv `
-  -Jthreads=50 `
-  -JrampUp=20 `
-  -Jloops=20 `
-  -JvoucherId=1001 `
-  -JorderPercent=5 `
-  -JpayPercent=20 `
-  -JorderWaitMs=1000
+  "-JbaseUrl=http://localhost:8081" `
+  "-JtokenCsv=.\tests\load\jmeter\data\tokens-12000.csv" `
+  "-Jthreads=50" `
+  "-JrampUp=20" `
+  "-Jloops=20" `
+  "-JvoucherId=1001" `
+  "-JorderPercent=5" `
+  "-JpayPercent=20" `
+  "-JorderWaitMs=1000"
 ```
 
 Small smoke run:
@@ -295,14 +295,14 @@ Small smoke run:
 jmeter -n `
   -t .\tests\load\jmeter\mixed-user-behavior.jmx `
   -l .\tests\load\jmeter\results\mixed-user-behavior-smoke.jtl `
-  -JbaseUrl=http://localhost:8081 `
-  -JtokenCsv=.\tests\load\jmeter\data\tokens-12000.csv `
-  -Jthreads=1 `
-  -JrampUp=1 `
-  -Jloops=1 `
-  -JvoucherId=1001 `
-  -JorderPercent=100 `
-  -JpayPercent=0
+  "-JbaseUrl=http://localhost:8081" `
+  "-JtokenCsv=.\tests\load\jmeter\data\tokens-12000.csv" `
+  "-Jthreads=1" `
+  "-JrampUp=1" `
+  "-Jloops=1" `
+  "-JvoucherId=1001" `
+  "-JorderPercent=100" `
+  "-JpayPercent=0"
 ```
 
 If the smoke run reports order-detail failures under load, inspect RocketMQ
@@ -332,6 +332,11 @@ For `mixed-user-behavior.jmx`, compare parent transaction samples such as
 alongside individual endpoint samples. The mixed plan is meant to expose
 read-path latency, authentication overhead on order queries, and the effect of
 a small write path mixed into normal browsing traffic.
+
+The JMeter console summary can be misleading for this plan because parent
+transactions and child HTTP samples are both written to the JTL. Use the JTL or
+HTML report as the source of truth for total sample count, per-label latency,
+and error rate.
 
 Local load-test numbers are useful for comparing versions on the same machine.
 They are not production SLA claims.
