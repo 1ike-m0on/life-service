@@ -23,6 +23,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Net.Http
 
 $ScriptDirectory = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($ScriptDirectory)) {
@@ -38,12 +39,57 @@ if ([string]::IsNullOrWhiteSpace($UserMapPath)) {
     $UserMapPath = Join-Path $ScriptDirectory "..\generated\source-user-id-map.csv"
 }
 
+function New-InputReader {
+    param([string] $Path)
+
+    if ($Path -match "^https?://") {
+        $httpClient = [System.Net.Http.HttpClient]::new()
+        $stream = $httpClient.GetStreamAsync($Path).GetAwaiter().GetResult()
+    }
+    else {
+        $resolved = Resolve-Path -LiteralPath $Path
+        $stream = [System.IO.File]::OpenRead($resolved.ProviderPath)
+    }
+
+    if ($Path.EndsWith(".gz", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $gzip = [System.IO.Compression.GzipStream]::new($stream, [System.IO.Compression.CompressionMode]::Decompress)
+        return [System.IO.StreamReader]::new($gzip)
+    }
+
+    return [System.IO.StreamReader]::new($stream)
+}
+
 function ConvertTo-NormalizedName {
     param([string] $Name)
     if ($null -eq $Name) {
         return ""
     }
     return (($Name -replace "[^A-Za-z0-9]", "").ToLowerInvariant())
+}
+
+function ConvertTo-FlatText {
+    param([AllowNull()] $Value)
+
+    if ($null -eq $Value) {
+        return ""
+    }
+
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
+        $parts = New-Object System.Collections.Generic.List[string]
+        foreach ($item in $Value) {
+            $text = ConvertTo-FlatText $item
+            if (-not [string]::IsNullOrWhiteSpace($text)) {
+                $parts.Add($text)
+            }
+        }
+        return ($parts -join ",")
+    }
+
+    if ($Value.PSObject.Properties["url"]) {
+        return ConvertTo-FlatText $Value.url
+    }
+
+    return "$Value".Trim()
 }
 
 function Get-JsonField {
@@ -62,17 +108,9 @@ function Get-JsonField {
         if ($lookup.ContainsKey($key)) {
             $value = $lookup[$key]
             if ($null -ne $value) {
-                if ($value -is [array]) {
-                    $joined = ($value | ForEach-Object { "$_".Trim() } | Where-Object { $_.Length -gt 0 }) -join ","
-                    if ($joined.Length -gt 0) {
-                        return $joined
-                    }
-                }
-                else {
-                    $text = "$value".Trim()
-                    if ($text.Length -gt 0) {
-                        return $text
-                    }
+                $text = ConvertTo-FlatText $value
+                if ($text.Length -gt 0) {
+                    return $text
                 }
             }
         }
@@ -144,6 +182,9 @@ function ConvertTo-DateTimeText {
     $seconds = 0L
     if ([long]::TryParse($Value, [ref] $seconds) -and $seconds -gt 0) {
         try {
+            if ($seconds -gt 9999999999) {
+                return ([DateTimeOffset]::FromUnixTimeMilliseconds($seconds).UtcDateTime).ToString("yyyy-MM-dd HH:mm:ss")
+            }
             return ([DateTimeOffset]::FromUnixTimeSeconds($seconds).UtcDateTime).ToString("yyyy-MM-dd HH:mm:ss")
         }
         catch {
@@ -173,7 +214,6 @@ function New-TitleFromContent {
     return $title
 }
 
-$resolvedInput = Resolve-Path -LiteralPath $InputPath
 $resolvedMerchantMap = Resolve-Path -LiteralPath $MerchantMapPath
 $merchantMapRows = Import-Csv -LiteralPath $resolvedMerchantMap
 $merchantIdBySource = @{}
@@ -204,95 +244,101 @@ $readCount = 0
 $skippedCount = 0
 $nextNoteId = $StartNoteId
 $nextUserSlot = 0
+$reader = New-InputReader $InputPath
 
-foreach ($line in [System.IO.File]::ReadLines($resolvedInput)) {
-    $lineNumber++
-    if ([string]::IsNullOrWhiteSpace($line)) {
-        continue
-    }
+try {
+    while (($line = $reader.ReadLine()) -ne $null) {
+        $lineNumber++
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
 
-    if ($MaxRows -gt 0 -and $readCount -ge $MaxRows) {
-        break
-    }
+        if ($MaxRows -gt 0 -and $readCount -ge $MaxRows) {
+            break
+        }
 
-    $readCount++
-    try {
-        $record = $line | ConvertFrom-Json
-    }
-    catch {
-        $warnings.Add("Line $lineNumber skipped because it is not valid JSON.")
-        $skippedCount++
-        continue
-    }
+        $readCount++
+        try {
+            $record = $line | ConvertFrom-Json
+        }
+        catch {
+            $warnings.Add("Line $lineNumber skipped because it is not valid JSON.")
+            $skippedCount++
+            continue
+        }
 
-    $reviewId = Get-JsonField $record @("review_id", "reviewid", "note_id", "id")
-    if ([string]::IsNullOrWhiteSpace($reviewId)) {
-        $reviewId = "line-$lineNumber"
-    }
+        $reviewId = Get-JsonField $record @("review_id", "reviewid", "note_id", "id")
+        if ([string]::IsNullOrWhiteSpace($reviewId)) {
+            $reviewId = "line-$lineNumber"
+        }
 
-    if ($seenReviewIds.ContainsKey($reviewId)) {
-        $warnings.Add("Duplicate review id '$reviewId' skipped at line $lineNumber.")
-        $skippedCount++
-        continue
-    }
-    $seenReviewIds[$reviewId] = $true
+        if ($seenReviewIds.ContainsKey($reviewId)) {
+            $warnings.Add("Duplicate review id '$reviewId' skipped at line $lineNumber.")
+            $skippedCount++
+            continue
+        }
+        $seenReviewIds[$reviewId] = $true
 
-    $sourceMerchantId = Get-JsonField $record @("source_merchant_id", "business_id", "gmap_id", "merchant_id", "businessId")
-    if ([string]::IsNullOrWhiteSpace($sourceMerchantId) -or -not $merchantIdBySource.ContainsKey($sourceMerchantId)) {
-        $warnings.Add("Review '$reviewId' skipped because merchant '$sourceMerchantId' is not in the merchant map.")
-        $skippedCount++
-        continue
-    }
+        $sourceMerchantId = Get-JsonField $record @("source_merchant_id", "business_id", "gmap_id", "merchant_id", "businessId")
+        if ([string]::IsNullOrWhiteSpace($sourceMerchantId) -or -not $merchantIdBySource.ContainsKey($sourceMerchantId)) {
+            $warnings.Add("Review '$reviewId' skipped because merchant '$sourceMerchantId' is not in the merchant map.")
+            $skippedCount++
+            continue
+        }
 
-    $content = Limit-Text (Get-JsonField $record @("content", "text", "review_text", "body", "comment")) 2000
-    if ([string]::IsNullOrWhiteSpace($content)) {
-        $warnings.Add("Review '$reviewId' skipped because content is missing.")
-        $skippedCount++
-        continue
-    }
+        $content = Limit-Text (Get-JsonField $record @("content", "text", "review_text", "body", "comment")) 2000
+        if ([string]::IsNullOrWhiteSpace($content)) {
+            $warnings.Add("Review '$reviewId' skipped because content is missing.")
+            $skippedCount++
+            continue
+        }
 
-    $sourceUserId = Get-JsonField $record @("user_id", "userid", "author_id", "author", "profile_id")
-    if ([string]::IsNullOrWhiteSpace($sourceUserId)) {
-        $sourceUserId = "anonymous-$lineNumber"
-    }
+        $sourceUserId = Get-JsonField $record @("user_id", "userid", "author_id", "author", "profile_id")
+        if ([string]::IsNullOrWhiteSpace($sourceUserId)) {
+            $sourceUserId = "anonymous-$lineNumber"
+        }
 
-    if (-not $userIdBySource.ContainsKey($sourceUserId)) {
-        $assignedUserId = $SeedUserIdStart + ($nextUserSlot % $SeedUserCount)
-        $nextUserSlot++
-        $userIdBySource[$sourceUserId] = $assignedUserId
-        $userMaps.Add([pscustomobject]@{
-                source_user_id = $sourceUserId
-                user_id = $assignedUserId
+        if (-not $userIdBySource.ContainsKey($sourceUserId)) {
+            $assignedUserId = $SeedUserIdStart + ($nextUserSlot % $SeedUserCount)
+            $nextUserSlot++
+            $userIdBySource[$sourceUserId] = $assignedUserId
+            $userMaps.Add([pscustomobject]@{
+                    source_user_id = $sourceUserId
+                    user_id = $assignedUserId
+                })
+        }
+
+        $title = Limit-Text (Get-JsonField $record @("title", "summary", "headline")) 128
+        if ([string]::IsNullOrWhiteSpace($title)) {
+            $title = Limit-Text (New-TitleFromContent $content) 128
+        }
+
+        $createdAt = ConvertTo-DateTimeText `
+            (Get-JsonField $record @("created_at", "date", "time", "timestamp")) `
+            $DefaultCreatedAt
+
+        $notes.Add([pscustomobject]@{
+                id = $nextNoteId
+                user_id = $userIdBySource[$sourceUserId]
+                merchant_id = $merchantIdBySource[$sourceMerchantId]
+                order_id = ""
+                title = $title
+                content = $content
+                rating = ConvertTo-Rating (Get-JsonField $record @("rating", "stars", "score"))
+                images = Limit-Text (Get-JsonField $record @("images", "image_urls", "imageUrls", "photos", "pics")) 2048
+                like_count = ConvertTo-Count (Get-JsonField $record @("like_count", "likes", "useful"))
+                comment_count = ConvertTo-Count (Get-JsonField $record @("comment_count", "comments"))
+                favorite_count = ConvertTo-Count (Get-JsonField $record @("favorite_count", "favorites"))
+                status = 1
+                created_at = $createdAt
+                updated_at = $createdAt
             })
+
+        $nextNoteId++
     }
-
-    $title = Limit-Text (Get-JsonField $record @("title", "summary", "headline")) 128
-    if ([string]::IsNullOrWhiteSpace($title)) {
-        $title = Limit-Text (New-TitleFromContent $content) 128
-    }
-
-    $createdAt = ConvertTo-DateTimeText `
-        (Get-JsonField $record @("created_at", "date", "time", "timestamp")) `
-        $DefaultCreatedAt
-
-    $notes.Add([pscustomobject]@{
-            id = $nextNoteId
-            user_id = $userIdBySource[$sourceUserId]
-            merchant_id = $merchantIdBySource[$sourceMerchantId]
-            order_id = ""
-            title = $title
-            content = $content
-            rating = ConvertTo-Rating (Get-JsonField $record @("rating", "stars", "score"))
-            images = Limit-Text (Get-JsonField $record @("images", "image_urls", "imageUrls", "photos", "pics")) 2048
-            like_count = ConvertTo-Count (Get-JsonField $record @("like_count", "likes", "useful"))
-            comment_count = ConvertTo-Count (Get-JsonField $record @("comment_count", "comments"))
-            favorite_count = ConvertTo-Count (Get-JsonField $record @("favorite_count", "favorites"))
-            status = 1
-            created_at = $createdAt
-            updated_at = $createdAt
-        })
-
-    $nextNoteId++
+}
+finally {
+    $reader.Dispose()
 }
 
 if ($notes.Count -eq 0) {

@@ -108,10 +108,31 @@ Known categories are mapped to the demo category ids:
 6 Cinema
 ```
 
+## Merchant JSONL / Gzip Mapping
+
+Some public datasets, such as Google Local Data 2021, publish business metadata
+as one JSON object per line and may compress it as `.json.gz`. Use:
+
+```powershell
+.\tests\data\importers\scripts\Convert-MerchantJsonl.ps1 `
+  -InputPath .\tests\data\raw\googlelocal\meta-Vermont.json.gz `
+  -OutputPath .\tests\data\importers\generated\googlelocal-vt-merchants.csv `
+  -MapPath .\tests\data\importers\generated\googlelocal-vt-merchant-id-map.csv `
+  -MaxRows 10000
+```
+
+The converter accepts the Google Local metadata fields `gmap_id`, `name`,
+`address`, `latitude`, `longitude`, `category`, `avg_rating`, `num_of_reviews`,
+`price`, `hours`, and `state`.
+
+`InputPath` can be either a local path or an HTTP(S) URL. For remote gzip files,
+the converter reads the stream progressively and stops once `MaxRows` is
+reached.
+
 ## Review JSONL Mapping
 
-The review converter expects one JSON object per line. Run the merchant
-converter first so `merchant-id-map.csv` exists.
+The review converter expects one JSON object per line. It also accepts `.gz`
+inputs. Run the merchant converter first so `merchant-id-map.csv` exists.
 
 Run a dry validation pass:
 
@@ -147,8 +168,60 @@ comment_count, favorite_count
 created_at, date, time, timestamp
 ```
 
+For Google Local review files, `gmap_id`, millisecond `time`, `text`, `rating`,
+`user_id`, and nested `pics.url` values are handled directly.
+
 Reviews with merchants that are missing from the map are skipped with a
 warning.
+
+`InputPath` can also point at an HTTP(S) `.json.gz` file. This is useful for
+large public datasets because 1k/10k/100k validation runs do not need to
+download the complete gzip artifact first.
+
+## Real Public Dataset Smoke
+
+The recommended first real dataset is the Vermont slice of Google Local Data
+2021 because it is public, local-business oriented, and small enough for local
+progressive validation.
+
+Raw downloads, when used, stay under the ignored folder:
+
+```text
+tests/data/raw/googlelocal/
+```
+
+Suggested validation ladder:
+
+```text
+1,000 reviews  -> fast converter smoke
+10,000 reviews -> medium mapping check
+100,000 reviews or state slice -> larger local evidence run
+```
+
+Do not commit raw `.json.gz` files or generated CSV outputs.
+
+One local validation run used:
+
+```text
+Merchant source:
+https://mcauleylab.ucsd.edu/public_datasets/gdrive/googlelocal/meta-Vermont.json.gz
+
+Review source:
+https://mcauleylab.ucsd.edu/public_datasets/gdrive/googlelocal/review-Vermont.json.gz
+```
+
+Observed converter results:
+
+```text
+merchant metadata: 11,291 source rows -> 11,243 merchants, 48 skipped
+1,000 reviews:      1,000 source rows  ->    788 notes, 212 skipped
+10,000 reviews:    10,000 source rows  ->  7,150 notes, 2,850 skipped
+100,000 reviews:  100,000 source rows  -> 67,004 notes, 32,996 skipped
+```
+
+The skipped review rows were mainly empty-text reviews. Generated CSV
+validation passed for the 1k, 10k, and 100k note outputs against the 11,243
+merchant output.
 
 ## Validate Generated CSVs
 

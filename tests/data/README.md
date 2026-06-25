@@ -150,3 +150,7 @@ tests/data/importers/
 The importer path keeps raw public datasets out of the repository and writes
 normalized merchant/note CSV outputs under an ignored generated folder. Start
 with `tests/data/importers/README.md` and the synthetic sample fixtures there.
+
+For real public-data validation, place downloaded source files under the
+ignored `tests/data/raw/` directory and run the converter ladder documented in
+`tests/data/importers/README.md`.
