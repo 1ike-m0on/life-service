@@ -1,6 +1,7 @@
 package io.github.ikemoon.lifeservice.order.service.stock;
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import io.github.ikemoon.lifeservice.infrastructure.cache.CacheConstants;
 import io.github.ikemoon.lifeservice.infrastructure.metrics.OrderMetrics;
 import io.github.ikemoon.lifeservice.order.service.close.OrderCloseProperties;
 import io.github.ikemoon.lifeservice.order.entity.StockReleaseTask;
@@ -10,12 +11,14 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import java.time.Duration;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -63,6 +66,13 @@ class StockReleaseServiceTest {
         boolean released = service.release(task(0));
 
         assertThat(released).isTrue();
+        ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<String> orderIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(redisTemplate).execute(any(RedisScript.class), keysCaptor.capture(), orderIdCaptor.capture());
+        assertThat(keysCaptor.getValue()).containsExactly(
+                CacheConstants.FLASH_SALE_STOCK_KEY_PREFIX + 1L,
+                CacheConstants.FLASH_SALE_RELEASED_ORDER_KEY_PREFIX + 1L);
+        assertThat(orderIdCaptor.getValue()).isEqualTo("100");
         verify(stockReleaseTxService).releaseMysqlStockAndMarkSuccess(any(StockReleaseTask.class));
         verify(stockReleaseTaskMapper, never()).update(any(), any(UpdateWrapper.class));
     }
@@ -86,7 +96,14 @@ class StockReleaseServiceTest {
 
         assertThat(released).isFalse();
         verify(stockReleaseTxService, never()).releaseMysqlStockAndMarkSuccess(any(StockReleaseTask.class));
-        verify(stockReleaseTaskMapper).update(any(), any(UpdateWrapper.class));
+        ArgumentCaptor<UpdateWrapper<StockReleaseTask>> updateCaptor = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(stockReleaseTaskMapper).update(any(), updateCaptor.capture());
+        assertThat(updateCaptor.getValue().getSqlSet()).contains("status", "reason", "retry_count", "next_retry_at");
+        assertThat(updateCaptor.getValue().getParamNameValuePairs().values())
+                .contains(
+                        StockReleaseTaskStatus.PENDING.code(),
+                        "Redis flash sale stock key is missing",
+                        1);
         assertThat(counter("life.stock.release.failure")).isEqualTo(1);
         assertThat(counter("life.stock.release.retry")).isEqualTo(1);
     }
@@ -99,7 +116,14 @@ class StockReleaseServiceTest {
         boolean released = service.release(task(2));
 
         assertThat(released).isFalse();
-        verify(stockReleaseTaskMapper).update(any(), any(UpdateWrapper.class));
+        ArgumentCaptor<UpdateWrapper<StockReleaseTask>> updateCaptor = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(stockReleaseTaskMapper).update(any(), updateCaptor.capture());
+        assertThat(updateCaptor.getValue().getSqlSet()).contains("status", "reason", "retry_count", "next_retry_at");
+        assertThat(updateCaptor.getValue().getParamNameValuePairs().values())
+                .contains(
+                        StockReleaseTaskStatus.FAILED.code(),
+                        "Redis flash sale stock key is missing",
+                        3);
         assertThat(counter("life.stock.release.failure")).isEqualTo(1);
         assertThat(counter("life.stock.release.retry")).isZero();
     }

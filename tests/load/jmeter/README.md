@@ -5,16 +5,33 @@ files are not committed.
 
 ## Scope
 
-The current load tests focus on the flash-sale order endpoint:
+The load-test plans cover two different goals:
+
+```text
+flash-sale-orders.jmx
+flash-sale-orders-gui.jmx
+```
+
+These are focused flash-sale order plans for the hot endpoint:
 
 ```text
 POST /api/v1/flash-sale-vouchers/{voucherId}/orders
 ```
 
-The endpoint requires `Authorization: Bearer <token>`. The test plan reads a
-token CSV so the measured request path stays close to the real flash-sale
-order path. Login/token creation is handled as a setup step, not inside the
-timed order sampler.
+Use them to benchmark the optimized async flash-sale order path, stock
+competition, sold-out fast failure, and fail-closed behavior.
+
+```text
+mixed-user-behavior.jmx
+```
+
+This is a broader user-journey plan. It keeps browsing traffic as the dominant
+behavior and adds a small amount of flash-sale order, order detail, order list,
+and optional payment traffic. Use it when you want production-like evidence
+across the local life-service surface instead of a single hot endpoint.
+
+All plans read a token CSV prepared before the timed run. Login/token creation
+stays outside JMeter so the measured path is repeatable.
 
 ## Prerequisites
 
@@ -66,6 +83,10 @@ email,token,clientIp
 `clientIp` is sent as `X-Forwarded-For` so local single-machine tests can avoid
 turning the IP-level rate limiter into the only bottleneck.
 
+The committed JMX files use `recycle=false` and `stopThread=true`. Prepare at
+least `threads * loops` token rows for a run unless you intentionally change
+that JMeter setting in a local copy.
+
 ## Reset Flash-Sale Data
 
 Before a clean benchmark run, reset MySQL state:
@@ -86,7 +107,13 @@ docker exec life-service-redis redis-cli DEL `
 curl -X POST http://localhost:8081/api/v1/flash-sale-vouchers/1001/warmup
 ```
 
-## Scenario 1: Success Path Baseline
+The same reset is enough for the mixed behavior plan when it uses
+`voucherId=1001`. If you pass another `voucherId`, update the SQL variables and
+Redis keys in a local copy before the run.
+
+## Flash-Sale Specialized Scenarios
+
+### Scenario 1: Success Path Baseline
 
 Purpose:
 
@@ -128,7 +155,7 @@ life_flash_sale_success_total
 HTTP P95 / P99 in Grafana
 ```
 
-## Scenario 2: Stock Competition
+### Scenario 2: Stock Competition
 
 Purpose:
 
@@ -152,7 +179,7 @@ not read business failure percentage as system error rate. The important checks
 are final order count, Redis stock, purchased-user set size, and duplicate
 orders.
 
-## Scenario 3: Sold-Out Fast Failure
+### Scenario 3: Sold-Out Fast Failure
 
 Purpose:
 
@@ -178,7 +205,7 @@ life_flash_sale_stock_not_enough_total
 HTTP 5xx should stay at 0
 ```
 
-## Scenario 4: Fail Closed
+### Scenario 4: Fail Closed
 
 Purpose:
 
@@ -197,6 +224,91 @@ no MQ publish
 no MySQL order creation
 ```
 
+## Mixed User Behavior Scenario
+
+Purpose:
+
+```text
+Exercise the product-shaped path: browse discovery data, inspect merchants and
+content, view vouchers, attempt a small amount of flash-sale ordering, review
+orders, and optionally pay a subset of created orders.
+```
+
+Per loop, `mixed-user-behavior.jmx` covers:
+
+```text
+GET  /api/v1/merchant-categories
+GET  /api/v1/merchants
+GET  /api/v1/notes
+GET  /api/v1/merchants/{merchantId}
+GET  /api/v1/merchants/{merchantId}/vouchers
+GET  /api/v1/merchants/{merchantId}/notes
+GET  /api/v1/notes/{noteId}
+POST /api/v1/flash-sale-vouchers/{voucherId}/orders        optional
+GET  /api/v1/voucher-orders/{orderNo}                       optional after a created order
+POST /api/v1/voucher-orders/{orderNo}/payment               optional after a created order
+GET  /api/v1/users/me/voucher-orders
+```
+
+The plan extracts `merchantId` and `noteId` from list responses. If extraction
+does not find a record, it falls back to `defaultMerchantId=1` and
+`defaultNoteId=1`.
+
+Recommended starting inputs:
+
+```text
+threads:       50
+ramp-up:       20s
+loops:         20
+orderPercent:  5
+payPercent:    20
+orderWaitMs:   1000
+```
+
+`orderPercent` is evaluated per loop. `payPercent` is evaluated only after a
+successful flash-sale order response created an `orderNo`. Business rejections
+from duplicate users or stock exhaustion are expected as data is consumed; do
+not treat them as infrastructure errors unless HTTP 5xx or assertion failures
+also appear.
+
+Run in non-GUI mode:
+
+```powershell
+jmeter -n `
+  -t .\tests\load\jmeter\mixed-user-behavior.jmx `
+  -l .\tests\load\jmeter\results\mixed-user-behavior.jtl `
+  -e -o .\tests\load\jmeter\results\mixed-user-behavior-html `
+  -JbaseUrl=http://localhost:8081 `
+  -JtokenCsv=.\tests\load\jmeter\data\tokens-12000.csv `
+  -Jthreads=50 `
+  -JrampUp=20 `
+  -Jloops=20 `
+  -JvoucherId=1001 `
+  -JorderPercent=5 `
+  -JpayPercent=20 `
+  -JorderWaitMs=1000
+```
+
+Small smoke run:
+
+```powershell
+jmeter -n `
+  -t .\tests\load\jmeter\mixed-user-behavior.jmx `
+  -l .\tests\load\jmeter\results\mixed-user-behavior-smoke.jtl `
+  -JbaseUrl=http://localhost:8081 `
+  -JtokenCsv=.\tests\load\jmeter\data\tokens-12000.csv `
+  -Jthreads=1 `
+  -JrampUp=1 `
+  -Jloops=1 `
+  -JvoucherId=1001 `
+  -JorderPercent=100 `
+  -JpayPercent=0
+```
+
+If the smoke run reports order-detail failures under load, inspect RocketMQ
+consumer lag and either increase `orderWaitMs` or set `payPercent=0` when the
+run is meant to measure browsing plus order submission only.
+
 ## Result Interpretation
 
 For every run, record:
@@ -205,6 +317,7 @@ For every run, record:
 branch / commit
 machine and Docker resources
 JMeter GUI or non-GUI
+scenario file and parameters
 requests / users / stock / threads / ramp-up / loops
 average / median / P90 / P95 / P99 / max / throughput
 HTTP 5xx
@@ -214,5 +327,25 @@ MySQL order count and duplicate count
 Grafana observations
 ```
 
+For `mixed-user-behavior.jmx`, compare parent transaction samples such as
+`Browse home feed`, `Inspect merchant and content`, and `Review my orders`
+alongside individual endpoint samples. The mixed plan is meant to expose
+read-path latency, authentication overhead on order queries, and the effect of
+a small write path mixed into normal browsing traffic.
+
 Local load-test numbers are useful for comparing versions on the same machine.
 They are not production SLA claims.
+
+## JMX Validation
+
+Validate the mixed user behavior JMX is well-formed XML:
+
+```powershell
+[xml](Get-Content -Raw -LiteralPath .\tests\load\jmeter\mixed-user-behavior.jmx) | Out-Null
+```
+
+Before handing off a change, also run:
+
+```powershell
+git diff --check
+```

@@ -2,6 +2,7 @@ package io.github.ikemoon.lifeservice.web;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.ikemoon.lifeservice.common.exception.BusinessException;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
 import io.github.ikemoon.lifeservice.common.security.AuthInterceptor;
 import io.github.ikemoon.lifeservice.common.security.AuthTokenService;
@@ -63,11 +64,13 @@ import java.util.Optional;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -177,8 +180,11 @@ class ControllerWebMvcTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", "bad-email"))))
                 .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(ErrorCode.BAD_REQUEST.name()));
+
+        verifyNoInteractions(userAuthService);
     }
 
     @Test
@@ -217,6 +223,7 @@ class ControllerWebMvcTest {
                         .param("pageSize", "5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.total").value(12))
                 .andExpect(jsonPath("$.data.pageNo").value(2))
                 .andExpect(jsonPath("$.data.records[0].name").value("Moonlight Coffee"));
@@ -233,6 +240,19 @@ class ControllerWebMvcTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(1))
                 .andExpect(jsonPath("$.data.name").value("Moonlight Coffee"));
+    }
+
+    @Test
+    void getMerchantBusinessExceptionReturnsApiResponse() throws Exception {
+        when(merchantQueryService.getMerchant(404L))
+                .thenThrow(new BusinessException(ErrorCode.NOT_FOUND, "merchant not found"));
+
+        mockMvc.perform(get("/api/v1/merchants/404"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.NOT_FOUND.name()))
+                .andExpect(jsonPath("$.message").value("merchant not found"));
     }
 
     @Test
@@ -266,8 +286,11 @@ class ControllerWebMvcTest {
         mockMvc.perform(get("/api/v1/merchants/1/vouchers"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data[0].id").value(1001))
                 .andExpect(jsonPath("$.data[0].title").value("Coffee Flash Sale 19.9"));
+
+        verify(voucherQueryService).listMerchantVouchers(1L);
     }
 
     @Test
@@ -354,6 +377,16 @@ class ControllerWebMvcTest {
     }
 
     @Test
+    void paymentRequiresLogin() throws Exception {
+        mockMvc.perform(post("/api/v1/voucher-orders/LSO202605220000000001/payment"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.name()));
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
     void paymentReturnsClosedBusinessFailureAsApiResponse() throws Exception {
         givenValidToken();
         when(paymentService.pay("LSO202605220000000001", 10L))
@@ -369,18 +402,25 @@ class ControllerWebMvcTest {
 
     @Test
     void pageNotesReturnsPublicNoteCards() throws Exception {
-        Page<NoteCardResponse> page = new Page<>(1, 20);
+        Page<NoteCardResponse> page = new Page<>(3, 7);
         page.setTotal(1);
         page.setRecords(List.of(noteCard(1L, "午后咖啡")));
-        when(noteQueryService.pagePublicNotes(1, 20)).thenReturn(page);
+        when(noteQueryService.pagePublicNotes(3, 7)).thenReturn(page);
 
-        mockMvc.perform(get("/api/v1/notes"))
+        mockMvc.perform(get("/api/v1/notes")
+                        .param("pageNo", "3")
+                        .param("pageSize", "7"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.pageNo").value(3))
+                .andExpect(jsonPath("$.data.pageSize").value(7))
                 .andExpect(jsonPath("$.data.records[0].id").value(1))
                 .andExpect(jsonPath("$.data.records[0].merchantName").value("Moonlight Coffee"))
                 .andExpect(jsonPath("$.data.records[0].images[0]").value("/assets/merchants/coffee/moonlight-cover.jpg"));
+
+        verify(noteQueryService).pagePublicNotes(3, 7);
     }
 
     @Test
@@ -413,15 +453,21 @@ class ControllerWebMvcTest {
 
     @Test
     void pageMerchantNotesReturnsMerchantNoteCards() throws Exception {
-        Page<NoteCardResponse> page = new Page<>(1, 10);
+        Page<NoteCardResponse> page = new Page<>(2, 8);
         page.setTotal(1);
         page.setRecords(List.of(noteCard(1L, "午后咖啡")));
-        when(noteQueryService.pageMerchantNotes(1L, 1, 10)).thenReturn(page);
+        when(noteQueryService.pageMerchantNotes(1L, 2, 8)).thenReturn(page);
 
-        mockMvc.perform(get("/api/v1/merchants/1/notes"))
+        mockMvc.perform(get("/api/v1/merchants/1/notes")
+                        .param("pageNo", "2")
+                        .param("pageSize", "8"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.pageNo").value(2))
+                .andExpect(jsonPath("$.data.pageSize").value(8))
                 .andExpect(jsonPath("$.data.records[0].merchantId").value(1));
+
+        verify(noteQueryService).pageMerchantNotes(1L, 2, 8);
     }
 
     @Test
@@ -588,6 +634,16 @@ class ControllerWebMvcTest {
     }
 
     @Test
+    void deleteNoteCommentRequiresLogin() throws Exception {
+        mockMvc.perform(delete("/api/v1/users/me/note-comments/7"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.name()));
+
+        verifyNoInteractions(noteCommentService);
+    }
+
+    @Test
     void pageFavoriteNotesRequiresLogin() throws Exception {
         mockMvc.perform(get("/api/v1/users/me/favorite-notes"))
                 .andExpect(status().isUnauthorized())
@@ -626,6 +682,16 @@ class ControllerWebMvcTest {
                 .andExpect(jsonPath("$.data.favorited").value(true));
 
         verify(noteFavoriteService).favoriteCurrentUserNote(10L, 4L);
+    }
+
+    @Test
+    void favoriteNoteRequiresLogin() throws Exception {
+        mockMvc.perform(post("/api/v1/users/me/notes/4/favorite"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.name()));
+
+        verifyNoInteractions(noteFavoriteService);
     }
 
     @Test

@@ -2,6 +2,7 @@ package io.github.ikemoon.lifeservice.order.service.impl;
 
 import io.github.ikemoon.lifeservice.common.exception.BusinessException;
 import io.github.ikemoon.lifeservice.common.exception.ErrorCode;
+import io.github.ikemoon.lifeservice.infrastructure.cache.CacheConstants;
 import io.github.ikemoon.lifeservice.infrastructure.id.OrderNoGenerator;
 import io.github.ikemoon.lifeservice.infrastructure.metrics.FlashSaleMetrics;
 import io.github.ikemoon.lifeservice.order.messaging.FlashSaleOrderCommand;
@@ -17,11 +18,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -207,7 +211,14 @@ class FlashSaleOrderServiceImplTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.code()).isEqualTo(ErrorCode.FLASH_SALE_STOCK_NOT_ENOUGH);
-        verify(redisTemplate).execute(any(RedisScript.class), anyList(), anyString(), anyString());
+        ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<String> nowCaptor = ArgumentCaptor.forClass(String.class);
+        verify(redisTemplate).execute(any(RedisScript.class), keysCaptor.capture(), eq("10"), nowCaptor.capture());
+        assertThat(keysCaptor.getValue()).containsExactly(
+                CacheConstants.FLASH_SALE_VOUCHER_KEY_PREFIX + 1L,
+                CacheConstants.FLASH_SALE_STOCK_KEY_PREFIX + 1L,
+                CacheConstants.FLASH_SALE_USERS_KEY_PREFIX + 1L);
+        assertThat(Long.parseLong(nowCaptor.getValue())).isPositive();
     }
 
     private void whenRedisQualificationReturns(Long result) {
