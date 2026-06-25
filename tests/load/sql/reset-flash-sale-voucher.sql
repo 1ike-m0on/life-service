@@ -1,5 +1,6 @@
-set @load_voucher_id := 1001;
-set @load_stock := 12000;
+-- Callers may set these session variables before sourcing this script.
+set @load_voucher_id := coalesce(@load_voucher_id, 1001);
+set @load_stock := coalesce(@load_stock, 12000);
 
 delete from ls_stock_release_task
 where voucher_id = @load_voucher_id;

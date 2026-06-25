@@ -6,6 +6,8 @@ frontend/node_modules/
 frontend/dist/
 tests/load/jmeter/data/*.csv
 tests/load/jmeter/results/
+tests/data/raw/
+tests/data/output/
 jmeter.log
 src/main/resources/application-local.yaml
 .env

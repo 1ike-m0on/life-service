@@ -138,3 +138,15 @@ git check-ignore -v tests/load/jmeter/results
 ```
 
 Do not force-add generated CSV, JTL, HTML reports, or local evidence folders.
+
+## Public Dataset Importers
+
+Public local-life or review datasets can be transformed with the scripts under:
+
+```text
+tests/data/importers/
+```
+
+The importer path keeps raw public datasets out of the repository and writes
+normalized merchant/note CSV outputs under an ignored generated folder. Start
+with `tests/data/importers/README.md` and the synthetic sample fixtures there.

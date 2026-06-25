@@ -196,6 +196,19 @@ class ControllerWebMvcTest {
     }
 
     @Test
+    void currentUserRejectsExpiredTokenBeforeServiceCall() throws Exception {
+        when(authTokenService.resolve(TOKEN)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/auth/me")
+                        .header("Authorization", "Bearer " + TOKEN))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.name()));
+
+        verifyNoInteractions(userAuthService);
+    }
+
+    @Test
     void currentUserReturnsUserWhenTokenIsValid() throws Exception {
         givenValidToken();
         when(userAuthService.currentUser())
@@ -229,6 +242,25 @@ class ControllerWebMvcTest {
                 .andExpect(jsonPath("$.data.records[0].name").value("Moonlight Coffee"));
 
         verify(merchantQueryService).pageMerchants(1L, "coffee", 2, 5);
+    }
+
+    @Test
+    void pageMerchantsUsesDefaultPaginationWhenQueryIsOmitted() throws Exception {
+        Page<Merchant> page = new Page<>(1, 10);
+        page.setRecords(List.of(merchant(2L, "Harbor Noodles")));
+        page.setTotal(1);
+        when(merchantQueryService.pageMerchants(null, null, 1, 10)).thenReturn(page);
+
+        mockMvc.perform(get("/api/v1/merchants"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.pageNo").value(1))
+                .andExpect(jsonPath("$.data.pageSize").value(10))
+                .andExpect(jsonPath("$.data.records[0].id").value(2))
+                .andExpect(jsonPath("$.data.records[0].name").value("Harbor Noodles"));
+
+        verify(merchantQueryService).pageMerchants(null, null, 1, 10);
     }
 
     @Test
@@ -307,6 +339,30 @@ class ControllerWebMvcTest {
     }
 
     @Test
+    void logoutRejectsMalformedAuthorizationHeaderBeforeServiceCall() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .header("Authorization", "Token " + TOKEN))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.name()));
+
+        verifyNoInteractions(authTokenService, userAuthService);
+    }
+
+    @Test
+    void logoutRejectsExpiredTokenBeforeServiceCall() throws Exception {
+        when(authTokenService.resolve(TOKEN)).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .header("Authorization", "Bearer " + TOKEN))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.name()));
+
+        verifyNoInteractions(userAuthService);
+    }
+
+    @Test
     void warmupReturnsWarmupResult() throws Exception {
         when(warmupService.warmUp(1001L)).thenReturn(new FlashSaleVoucherWarmupResult(
                 1001L,
@@ -325,11 +381,36 @@ class ControllerWebMvcTest {
     }
 
     @Test
+    void warmupBusinessExceptionReturnsApiResponse() throws Exception {
+        when(warmupService.warmUp(1001L))
+                .thenThrow(new BusinessException(ErrorCode.FLASH_SALE_NOT_READY, "warmup source not ready"));
+
+        mockMvc.perform(post("/api/v1/flash-sale-vouchers/1001/warmup"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.FLASH_SALE_NOT_READY.name()))
+                .andExpect(jsonPath("$.message").value("warmup source not ready"));
+    }
+
+    @Test
     void flashSaleOrderRequiresLogin() throws Exception {
         mockMvc.perform(post("/api/v1/flash-sale-vouchers/1001/orders"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.name()));
+    }
+
+    @Test
+    void flashSaleOrderRejectsExpiredTokenBeforeServiceCall() throws Exception {
+        when(authTokenService.resolve(TOKEN)).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/v1/flash-sale-vouchers/1001/orders")
+                        .header("Authorization", "Bearer " + TOKEN))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.name()));
+
+        verifyNoInteractions(flashSaleOrderService);
     }
 
     @Test
@@ -374,6 +455,21 @@ class ControllerWebMvcTest {
                 .andExpect(jsonPath("$.data.orderNo").value("LSO202605220000000001"))
                 .andExpect(jsonPath("$.data.status").value(2))
                 .andExpect(jsonPath("$.data.idempotent").value(false));
+    }
+
+    @Test
+    void paymentReturnsAlreadyPaidAsIdempotentResponse() throws Exception {
+        givenValidToken();
+        when(paymentService.pay("LSO202605220000000001", 10L))
+                .thenReturn(VoucherOrderPaymentResult.alreadyPaid("LSO202605220000000001", 2));
+
+        mockMvc.perform(post("/api/v1/voucher-orders/LSO202605220000000001/payment")
+                        .header("Authorization", "Bearer " + TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.orderNo").value("LSO202605220000000001"))
+                .andExpect(jsonPath("$.data.status").value(2))
+                .andExpect(jsonPath("$.data.idempotent").value(true));
     }
 
     @Test
@@ -449,6 +545,18 @@ class ControllerWebMvcTest {
                 .andExpect(jsonPath("$.data.rating").value(5))
                 .andExpect(jsonPath("$.data.commentCount").value(3))
                 .andExpect(jsonPath("$.data.favoriteCount").value(2));
+    }
+
+    @Test
+    void getNoteBusinessExceptionReturnsApiResponse() throws Exception {
+        when(noteQueryService.getVisibleNote(404L))
+                .thenThrow(new BusinessException(ErrorCode.NOT_FOUND, "note not found"));
+
+        mockMvc.perform(get("/api/v1/notes/404"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.NOT_FOUND.name()))
+                .andExpect(jsonPath("$.message").value("note not found"));
     }
 
     @Test
@@ -622,6 +730,21 @@ class ControllerWebMvcTest {
     }
 
     @Test
+    void createNoteCommentRejectsBlankContentBeforeServiceCall() throws Exception {
+        givenValidToken();
+
+        mockMvc.perform(post("/api/v1/users/me/notes/1/comments")
+                        .header("Authorization", "Bearer " + TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("content", " "))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.BAD_REQUEST.name()));
+
+        verifyNoInteractions(noteCommentService);
+    }
+
+    @Test
     void deleteNoteCommentUsesCurrentUser() throws Exception {
         givenValidToken();
 
@@ -695,6 +818,16 @@ class ControllerWebMvcTest {
     }
 
     @Test
+    void getNoteFavoriteRequiresLogin() throws Exception {
+        mockMvc.perform(get("/api/v1/users/me/notes/4/favorite"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.name()));
+
+        verifyNoInteractions(noteFavoriteService);
+    }
+
+    @Test
     void getNoteFavoriteUsesCurrentUser() throws Exception {
         givenValidToken();
         when(noteFavoriteService.getCurrentUserFavorite(10L, 4L))
@@ -708,6 +841,16 @@ class ControllerWebMvcTest {
                 .andExpect(jsonPath("$.data.favorited").value(true));
 
         verify(noteFavoriteService).getCurrentUserFavorite(10L, 4L);
+    }
+
+    @Test
+    void cancelNoteFavoriteRequiresLogin() throws Exception {
+        mockMvc.perform(delete("/api/v1/users/me/notes/4/favorite"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.name()));
+
+        verifyNoInteractions(noteFavoriteService);
     }
 
     @Test
@@ -774,6 +917,20 @@ class ControllerWebMvcTest {
                 .andExpect(jsonPath("$.data.merchantName").value("Moonlight Coffee"));
 
         verify(voucherOrderQueryService).getCurrentUserOrder("LSO202605220000000001", 10L);
+    }
+
+    @Test
+    void getVoucherOrderBusinessExceptionReturnsApiResponse() throws Exception {
+        givenValidToken();
+        when(voucherOrderQueryService.getCurrentUserOrder("LSO202605220000000404", 10L))
+                .thenThrow(new BusinessException(ErrorCode.NOT_FOUND, "order not found"));
+
+        mockMvc.perform(get("/api/v1/voucher-orders/LSO202605220000000404")
+                        .header("Authorization", "Bearer " + TOKEN))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.NOT_FOUND.name()))
+                .andExpect(jsonPath("$.message").value("order not found"));
     }
 
     private void givenValidToken() {

@@ -91,7 +91,7 @@
             </elementProp>
             <elementProp name="" elementType="Header">
               <stringProp name="Header.name">X-Forwarded-For</stringProp>
-              <stringProp name="Header.value">${clientIp}</stringProp>
+              <stringProp name="Header.value">${__groovy(props.get('clientIpOverride') ?: vars.get('clientIp'))}</stringProp>
             </elementProp>
             <elementProp name="" elementType="Header">
               <stringProp name="Header.name">Content-Type</stringProp>
