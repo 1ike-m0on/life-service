@@ -1,5 +1,9 @@
 <template>
-  <article class="merchant-card" @click="$emit('open', merchant.id)">
+  <article
+    class="merchant-card"
+    :data-testid="`merchant-card-${merchant.id}`"
+    @click="$emit('open', merchant.id)"
+  >
     <div class="merchant-card__media">
       <img class="merchant-card__image" :src="coverImage" :alt="merchant.name" @error="useFallbackImage" />
       <span class="merchant-card__category">{{ categoryLabel }}</span>

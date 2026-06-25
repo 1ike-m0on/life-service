@@ -2,12 +2,16 @@ HELP.md
 target/
 .m2/
 docs/
+.ai/
+AGENTS.md
 frontend/node_modules/
 frontend/dist/
 tests/load/jmeter/data/*.csv
 tests/load/jmeter/results/
 tests/data/raw/
 tests/data/output/
+tests/data/importers/generated/
+tests/fault-injection/results/
 jmeter.log
 src/main/resources/application-local.yaml
 .env

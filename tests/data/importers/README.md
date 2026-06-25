@@ -247,3 +247,34 @@ load them into a local database only when they match the scenario you are
 testing. For repeatable evidence, record the source dataset name, local file
 hash, converter parameters, row counts, and validation result outside Git if
 the evidence is large.
+
+## S2 Large Local Sample
+
+S2 adds a repeatable large sample for public read-path validation without
+downloading network data. It defaults to the local Google Local metadata file:
+
+```text
+tests/data/raw/googlelocal/meta-Vermont.json.gz
+```
+
+Generate the default S2 CSVs:
+
+```powershell
+.\tests\data\importers\scripts\New-PublicDatasetS2.ps1
+```
+
+Default S2 scale:
+
+```text
+50,000 merchants
+300,000 notes
+120,000 note favorites
+2 local image references per merchant
+about 80% of notes with local image references
+```
+
+The import script accepts an optional `-FavoriteCsv`, and the MySQL validation
+script accepts `tests/load/sql/validate-public-dataset-s2.sql` through
+`-SqlPath` or `-ValidationSqlPath`. See
+`tests/data/importers/mysql-import-s2.md` for the full generation, import, and
+validation ladder.

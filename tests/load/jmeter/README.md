@@ -30,6 +30,14 @@ behavior and adds a small amount of flash-sale order, order detail, order list,
 and optional payment traffic. Use it when you want production-like evidence
 across the local life-service surface instead of a single hot endpoint.
 
+```text
+public-dataset-query-read.jmx
+```
+
+This is a read-heavy public dataset plan. It assumes the S1 public dataset has
+already been imported into MySQL and measures merchant, note, voucher, and user
+order query paths against the larger dataset.
+
 All plans read a token CSV prepared before the timed run. Login/token creation
 stays outside JMeter so the measured path is repeatable.
 
@@ -40,6 +48,8 @@ New-LoadUsers.ps1                  generate user CSVs
 New-AuthTokens.ps1                 prepare token CSVs
 Reset-FlashSaleVoucher.ps1         reset MySQL/Redis and optionally warm up
 Invoke-LoadScenario.ps1            run one named scenario
+Invoke-PublicDatasetQueryScenario.ps1 run the public dataset read scenario
+Invoke-ReadBehaviorEvidenceSet.ps1 run mixed + public dataset evidence together
 Invoke-ProductionEvidenceLoadSet.ps1 run the planned scenario set in order
 ```
 
@@ -129,6 +139,55 @@ session variables when you need to source it manually.
 
 ## Run The Planned Set
 
+By default, the scenario wrappers archive run output under:
+
+```text
+tests/load/jmeter/results/evidence-<RunId>/
+```
+
+The `results/` folder is git-ignored. Each scenario writes a JTL file, an
+optional JMeter HTML dashboard directory, a `*-summary.json`, and a
+`*-summary.md`. Set runners also write aggregate `summary.json` and
+`summary.md` files in the evidence directory.
+
+Run the mixed user behavior and public dataset read evidence set in one command:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ReadBehaviorEvidenceSet.ps1 `
+  -BaseUrl http://localhost:8081 `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+Run only one scenario or skip one:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ReadBehaviorEvidenceSet.ps1 `
+  -OnlyScenario mixed-user-behavior `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+
+.\tests\load\jmeter\scripts\Invoke-ReadBehaviorEvidenceSet.ps1 `
+  -SkipScenario public-dataset-query-read `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+Preview the complete command flow without writing output or calling the backend:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ReadBehaviorEvidenceSet.ps1 `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv `
+  -DryRun
+```
+
+`-WhatIf` is also accepted and behaves like `-DryRun`. If you pass `-UsersCsv`
+without `-TokenCsv`, the runner prepares a run-local token CSV under the
+evidence directory before the timed JMeter scenarios:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-ReadBehaviorEvidenceSet.ps1 `
+  -UsersCsv .\tests\load\jmeter\data\users-12000.csv `
+  -JMeterBin C:\tools\apache-jmeter\bin\jmeter.bat
+```
+
 Run the complete V2.5 production-evidence set in order:
 
 ```powershell
@@ -154,6 +213,9 @@ Preview the reset and JMeter commands without changing data:
   -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv `
   -DryRun
 ```
+
+The production evidence set also supports `-OnlyScenario`, `-SkipScenario`,
+`-UsersCsv`, `-OutputDir`, `-JMeterBin`, `-DryRun`, and `-WhatIf`.
 
 The scenario wrappers inspect the generated JTL and fail when any sample has
 `success=false`. Use `-AllowSampleErrors` only for exploratory runs where failed
@@ -404,6 +466,44 @@ If the smoke run reports order-detail failures under load, inspect RocketMQ
 consumer lag and either increase `orderWaitMs` or set `payPercent=0` when the
 run is meant to measure browsing plus order submission only.
 
+## Public Dataset Read Scenario
+
+Purpose:
+
+```text
+Exercise the S1 public dataset read paths with stable query volume after data
+has been imported into MySQL.
+```
+
+Per loop, `public-dataset-query-read.jmx` covers:
+
+```text
+GET /api/v1/merchants
+GET /api/v1/notes
+GET /api/v1/merchants/{merchantId}
+GET /api/v1/merchants/{merchantId}/vouchers
+GET /api/v1/merchants/{merchantId}/notes
+GET /api/v1/notes/{noteId}
+GET /api/v1/users/me/voucher-orders
+```
+
+Run with the wrapper:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-PublicDatasetQueryScenario.ps1 `
+  -BaseUrl http://localhost:8081 `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
+Run with explicit archive and JMeter binary:
+
+```powershell
+.\tests\load\jmeter\scripts\Invoke-PublicDatasetQueryScenario.ps1 `
+  -OutputDir .\tests\load\jmeter\results\evidence-public-read `
+  -JMeterBin C:\tools\apache-jmeter\bin\jmeter.bat `
+  -TokenCsv .\tests\load\jmeter\data\tokens-12000.csv
+```
+
 ## Result Interpretation
 
 For every run, record:
@@ -436,6 +536,10 @@ and error rate.
 Local load-test numbers are useful for comparing versions on the same machine.
 They are not production SLA claims.
 
+The generated `summary.md` files are intended as the handoff index for archived
+evidence. Use the JTL or HTML dashboard when you need per-sample detail or the
+full JMeter percentile tables.
+
 ## JMX Validation
 
 Validate changed JMX files are well-formed XML:
@@ -443,7 +547,8 @@ Validate changed JMX files are well-formed XML:
 ```powershell
 $plans = @(
   ".\tests\load\jmeter\flash-sale-orders.jmx",
-  ".\tests\load\jmeter\mixed-user-behavior.jmx"
+  ".\tests\load\jmeter\mixed-user-behavior.jmx",
+  ".\tests\load\jmeter\public-dataset-query-read.jmx"
 )
 
 foreach ($plan in $plans) {

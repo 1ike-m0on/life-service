@@ -23,7 +23,7 @@ Print the reset and JMeter commands without changing data or running JMeter.
 .PARAMETER AllowSampleErrors
 Do not fail the wrapper when the JTL contains failed samples.
 #>
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet("success", "stock-competition", "sold-out-fast-failure", "fail-closed", "rate-limit", "mixed-user-behavior")]
@@ -37,8 +37,12 @@ param(
 
     [string] $TokenCsv = "",
 
+    [string] $UsersCsv = "",
+
+    [Alias("OutputDir")]
     [string] $ResultsDir = "",
 
+    [Alias("JMeterBin")]
     [ValidateNotNullOrEmpty()]
     [string] $JMeterPath = "jmeter",
 
@@ -81,12 +85,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if ([string]::IsNullOrWhiteSpace($TokenCsv)) {
-    $TokenCsv = Join-Path $PSScriptRoot "..\data\tokens-12000.csv"
-}
+$scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $scriptRoot "JMeterEvidenceSupport.ps1")
+$previewOnly = $DryRun -or $WhatIfPreference
 
 if ([string]::IsNullOrWhiteSpace($ResultsDir)) {
-    $ResultsDir = Join-Path $PSScriptRoot "..\results"
+    $ResultsDir = Get-JMeterEvidenceDefaultResultsDir -ScriptRoot $scriptRoot -RunId $RunId
+}
+
+$resolvedResultsDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ResultsDir)
+
+if ([string]::IsNullOrWhiteSpace($TokenCsv)) {
+    if ([string]::IsNullOrWhiteSpace($UsersCsv)) {
+        $TokenCsv = Join-Path $PSScriptRoot "..\data\tokens-12000.csv"
+    }
+    else {
+        $TokenCsv = Join-Path $resolvedResultsDir "tokens-$RunId.csv"
+    }
 }
 
 if ($OrderPercent -lt -1 -or $OrderPercent -gt 100) {
@@ -298,7 +313,6 @@ if ($Smoke) {
     }
 }
 
-$scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $jmeterRoot = Split-Path -Parent $scriptRoot
 $planPath = Join-Path $jmeterRoot ([string] $config.Plan)
 if (-not (Test-Path -LiteralPath $planPath)) {
@@ -306,11 +320,27 @@ if (-not (Test-Path -LiteralPath $planPath)) {
 }
 
 $resolvedTokenCsv = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($TokenCsv)
-if (-not $DryRun -and -not (Test-Path -LiteralPath $resolvedTokenCsv)) {
+if (-not [string]::IsNullOrWhiteSpace($UsersCsv)) {
+    $resolvedUsersCsv = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($UsersCsv)
+    $authScript = Join-Path $scriptRoot "New-AuthTokens.ps1"
+    $authArgs = @(
+        "-BaseUrl", $normalizedBaseUrl,
+        "-UserCsv", $resolvedUsersCsv,
+        "-OutputPath", $resolvedTokenCsv
+    )
+
+    if ($previewOnly) {
+        Write-Host "DRY RUN: $(Format-JMeterEvidenceCommand -Command $authScript -Arguments $authArgs)"
+    }
+    else {
+        & $authScript -BaseUrl $normalizedBaseUrl -UserCsv $resolvedUsersCsv -OutputPath $resolvedTokenCsv
+    }
+}
+
+if (-not $previewOnly -and -not (Test-Path -LiteralPath $resolvedTokenCsv)) {
     throw "TokenCsv was not found: $resolvedTokenCsv. Prepare tokens before running JMeter."
 }
 
-$resolvedResultsDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ResultsDir)
 $label = [string] $config.Label
 if ($Smoke) {
     $label = "$label-smoke"
@@ -319,6 +349,8 @@ if ($Smoke) {
 $resultPrefix = "$label-$RunId"
 $jtlPath = Join-Path $resolvedResultsDir "$resultPrefix.jtl"
 $htmlPath = Join-Path $resolvedResultsDir "$resultPrefix-html"
+$summaryJsonPath = Join-Path $resolvedResultsDir "$resultPrefix-summary.json"
+$summaryMarkdownPath = Join-Path $resolvedResultsDir "$resultPrefix-summary.md"
 $writeHtml = -not $NoHtmlReport -and -not $Smoke
 
 if ($PrepareData) {
@@ -333,15 +365,18 @@ if ($PrepareData) {
         $resetArgs.FailClosed = $true
     }
 
-    if ($DryRun) {
+    if ($previewOnly) {
         $resetArgs.DryRun = $true
     }
 
     & $resetScript @resetArgs
 }
 
-if (-not $DryRun) {
+if (-not $previewOnly) {
     New-Item -ItemType Directory -Force -Path $resolvedResultsDir | Out-Null
+    if ($writeHtml -and (Test-Path -LiteralPath $htmlPath)) {
+        throw "HTML report path already exists: $htmlPath. Use a new RunId or OutputDir."
+    }
 }
 
 $jmeterArgs = [System.Collections.Generic.List[string]]::new()
@@ -390,12 +425,10 @@ Write-Host "JTL: $jtlPath"
 if ($writeHtml) {
     Write-Host "HTML: $htmlPath"
 }
+Write-Host "Summary: $summaryMarkdownPath"
 
-if ($DryRun) {
-    $printableArgs = $jmeterArgs | ForEach-Object {
-        if ($_ -match "[\s|&;<>]") { '"' + $_ + '"' } else { $_ }
-    }
-    Write-Host "DRY RUN: $JMeterPath $($printableArgs -join ' ')"
+if ($previewOnly) {
+    Write-Host "DRY RUN: $(Format-JMeterEvidenceCommand -Command $JMeterPath -Arguments ([string[]] $jmeterArgs.ToArray()))"
     return
 }
 
@@ -403,6 +436,35 @@ if ($DryRun) {
 if ($LASTEXITCODE -ne 0) {
     throw "JMeter scenario '$Scenario' failed with exit code $LASTEXITCODE."
 }
+
+$summaryParameters = [ordered] @{
+    baseUrl = $normalizedBaseUrl
+    tokenCsv = $resolvedTokenCsv
+    usersCsv = if ([string]::IsNullOrWhiteSpace($UsersCsv)) { "" } else { $resolvedUsersCsv }
+    threads = $effectiveThreads
+    rampUp = $effectiveRampUp
+    loops = $effectiveLoops
+    voucherId = $VoucherId
+    stock = $effectiveStock
+    orderPercent = $effectiveOrderPercent
+    payPercent = $effectivePayPercent
+    orderWaitMs = $effectiveOrderWaitMs
+    clientIpOverride = $effectiveClientIpOverride
+    smoke = [bool] $Smoke
+}
+
+$summary = Write-JMeterJtlSummary `
+    -JtlPath $jtlPath `
+    -ScenarioName $Scenario `
+    -RunId $RunId `
+    -PlanPath $planPath `
+    -BaseUrl $normalizedBaseUrl `
+    -HtmlReportPath $(if ($writeHtml) { $htmlPath } else { "" }) `
+    -SummaryJsonPath $summaryJsonPath `
+    -SummaryMarkdownPath $summaryMarkdownPath `
+    -Parameters $summaryParameters
+
+Write-Host "Summary written: $summaryMarkdownPath"
 
 if (-not $AllowSampleErrors) {
     Assert-JtlHasNoSampleErrors -Path $jtlPath -ScenarioName $Scenario
